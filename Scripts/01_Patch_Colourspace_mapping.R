@@ -136,18 +136,38 @@ taxo <- read.csv("./4_SharedInputData/BLIOCPhyloMasterTax_2019_10_28.csv", strin
 # load patch pixel values (vRGB; uRGB)
 px_master <- readRDS("./2_Patches/1_InputData/patches.231030.rds")
 
-# remove any galloanseriformes or palaeognaths
-px <- px_master |> 
-  dplyr::left_join(
-    taxo,
-    by = dplyr::join_by(species == TipLabel)
-  ) |>
-  dplyr::filter(
-    IOCOrder != "GALLIFORMES"
-  ) |>
-  dplyr::select(
-    species, specimen, sex, view, region, coord.x, coord.y, vR, vG, vB, uR, uG, uB, min.r2
-  )
+# Choose whether to examine all Neoaves or passerines only
+# "neoaves" or "passerines"
+group <- "passerines"
+
+if(group == "neoaves"){
+  # remove any galloanseriformes or palaeognaths
+  px <- px_master |> 
+    dplyr::left_join(
+      taxo,
+      by = dplyr::join_by(species == TipLabel)
+    ) |>
+    dplyr::filter(
+      IOCOrder != "GALLIFORMES"
+    ) |>
+    dplyr::select(
+      species, specimen, sex, view, region, coord.x, coord.y, vR, vG, vB, uR, uG, uB, min.r2
+    )
+} else if(group == "passerines"){
+  # remove any non-passerines
+  px <- px_master |> 
+    dplyr::left_join(
+      taxo,
+      by = dplyr::join_by(species == TipLabel)
+    ) |>
+    dplyr::filter(
+      PassNonPass == "PASSERIFORMES"
+    ) |>
+    dplyr::select(
+      species, specimen, sex, view, region, coord.x, coord.y, vR, vG, vB, uR, uG, uB, min.r2
+    )
+}
+
 
 
 # ------------- #
@@ -336,7 +356,7 @@ for (i in 1:nrow(px)) {
 
 
 # save
-saveRDS(px, "./2_Patches/3_OutputData/1_RawColourspaces/Neoaves.patches.231030.rawcolspaces.processed.240603.rds")
+saveRDS(px, "./2_Patches/3_OutputData/1_RawColourspaces/Passeriformes.patches.231030.rawcolspaces.processed.240925.rds")
 
 
 
