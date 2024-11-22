@@ -106,21 +106,31 @@ assert_umap_pca <- checkmate::makeAssertionFunction(check_umap_pca)
 
 # Load data ----
 
+## EDITABLE CODE ##
+# Select subset of species ("Neoaves" or "Passeriformes")
+clade <- "Passeriformes"
+# select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
+# N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
+# (from 240603 to 240806)
+space <- "lab"
+
 # PCA data (output from 02_Patch_Analyse_features)
-pca_jndxyzlumr <- readr::read_rds(
+pca_filename <- paste(clade, "patches.231030.PCAcolspaces", space, "240925", "rds", sep = ".")
+pca_all <- readRDS(
   here::here(
-    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "Neoaves.patches.231030.PCAcolspaces.jndxyzlumr.240404.rds"
+    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
+    pca_filename
   )
 )
 
 # UMAP data (output from 02b_Patch_Umap_iterations.R)
-umap_jndxyzlumr <- readr::read_rds(
+umap_filename <- paste(clade, "patches", space, "pca", "canonUMAP", "rds", sep = ".")
+umap_all <- readr::read_rds(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
-    "Neoaves.patches.pca.jndxyzlumr.UMAPs.iterations.240326.rds"
+    umap_filename
   )
 ) %>% 
-  magrittr::extract2(1) %>% 
   magrittr::extract2("layout")
 
 # taxonomy
@@ -135,10 +145,10 @@ taxo_raw <- read.csv(
 
 # create df with species, sex, UMAP values, and taxon subgroups
 df <- tibble(
-  species = sapply(strsplit(rownames(umap_jndxyzlumr), split = "-"), "[", 1),
-  sex = sapply(strsplit(rownames(umap_jndxyzlumr), split = "-"), "[", 2),
-  umap_axis_1 = umap_jndxyzlumr[, 1],
-  umap_axis_2 = umap_jndxyzlumr[, 2]
+  species = sapply(strsplit(rownames(umap_all), split = "-"), "[", 1),
+  sex = sapply(strsplit(rownames(umap_all), split = "-"), "[", 2),
+  umap_axis_1 = umap_all[, 1],
+  umap_axis_2 = umap_all[, 2]
 ) %>% 
   left_join(
     taxo_raw,
@@ -163,7 +173,7 @@ df <- df %>%
 df %>% glimpse()
 
 # append raw PCA values
-pca_vals <- pca_jndxyzlumr %>% 
+pca_vals <- pca_all %>% 
   magrittr::extract2("x")
 
 df_with_pca <- tibble(
@@ -225,13 +235,14 @@ df %>%
   theme_bw()
 
 # males vs females (discarding unknown sex specimens)
+# Also log transform density
 df %>%
   filter(
     sex != "u"
   ) %>% 
   ggplot(aes(x = umap_axis_1, y = umap_axis_2)) + 
   geom_hex(bins = 50) + 
-  scale_fill_viridis_c(option = "plasma") + 
+  scale_fill_viridis_c(option = "plasma", trans = "log") + 
   facet_wrap(~ sex) + 
   theme_bw()
 
@@ -257,6 +268,7 @@ df %>%
   ) %>% 
   ggplot(aes(x = umap_axis_1, y = umap_axis_2)) + 
   stat_density2d(aes(fill = after_stat(level)), geom = "polygon", n = 50) + 
+  scale_fill_viridis_c(option = "plasma") +
   facet_wrap(~ sex) + 
   theme_bw()
 
@@ -290,7 +302,7 @@ df_with_pca %>%
   filter(
  #   pass_non_pass == "nonpasseriformes",
     sex != "u",
-    dichromatism >= 10.771,
+    dichromatism >= quantile(dichromatism, na.rm = T)[2],
     !is.na(dichromatism)  ) %>% 
   ggplot(aes(x = umap_axis_1, y = umap_axis_2, alpha = log(dichromatism))) + 
   geom_point(colour = "midnightblue") + 
@@ -301,6 +313,41 @@ df_with_pca %>%
 # in contrast, in highly dichromatic species female colouration tends to be more evenly distributed,
 # and closer to the centroid
 # this suggests that in most dichromatic species, it's the male which has the more unusual colouration
+
+## Plot IUCN category
+# load iucn data
+iucn <- read.csv(
+  here::here(
+    "4_SharedInputData", "iucn_2024_nominate.csv"
+  )
+) %>% 
+  mutate(
+    species = snakecase::to_snake_case(species_birdtree)
+  )
+
+# add to df
+df_iucn <- df %>% 
+  left_join(iucn, by = "species") %>% 
+  mutate(
+    iucn_cat = factor(iucn_cat, levels = c("DD", "LC", "NT", "VU", "EN", "CR", "EX"))
+  ) %>% 
+  left_join(
+    df_with_pca,
+    by = c("species", "sex")
+  )
+
+# plot with transparency according to iucn category
+df_iucn %>% 
+  filter(
+    iucn_cat != "DD",
+    sex != "u"
+  ) %>% 
+  ggplot(aes(x = PC1, y = PC2, alpha = iucn_cat)) + 
+  geom_point(colour = "darkred") + 
+  facet_wrap(~ sex) + 
+  theme_bw()
+  
+# 
 
 # now plot interactively
 # note that we need colour = species here so that the interactive plot will show species name
@@ -317,9 +364,11 @@ p <- df_with_pca %>%
 plotly::ggplotly(p)
   
 # save interactive plot as html widget
+plot_filename <- paste("interactive", clade, "patches", space, "umap_bysex.html", sep = "_")
 htmlwidgets::saveWidget(
   plotly::ggplotly(p),
   here::here(
-    "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", "interactive_jndxyzlumr_umap_bysex.html"
+    "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", 
+    plot_filename
   )
 )

@@ -19,9 +19,9 @@ clade <- "Passeriformes"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
-space <- "usml"
+space <- "lab"
 # select sex ("M", "F", "All")
-sex <- "F"
+sex <- "All"
 # select UMAP parameters
 nn <- "default"
 min_dist <- "default"
@@ -45,6 +45,21 @@ taxo <- read.csv(
 
 
 #-------------------------------------------------------------------------------------------------#
+
+# First perform UMAP once with default parameters and preserved seed to get canonical UMAP to 
+# use with other scripts
+
+canon_umap <- umap::umap(pca_all$x, preserve.seed = TRUE)
+
+# save
+umap_filename <- paste(clade, "patches", space, "pca", "canonUMAP", "rds", sep = ".")
+saveRDS(canon_umap, 
+        file = here::here(
+          "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP", 
+          umap_filename
+        )
+)
+
 
 # Perform UMAP four times with the default parameters to see if clustering is visually different 
 # Plot and save as png

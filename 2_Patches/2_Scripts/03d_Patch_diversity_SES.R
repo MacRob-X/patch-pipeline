@@ -24,7 +24,7 @@ source(
 
 ## EDITABLE CODE ## ----
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Neoaves"
+clade <- "Passeriformes"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
@@ -347,27 +347,42 @@ for (sex in c("M", "F", "All")){
 }
 
 # convert IUCN cat lost to factor and adjust levels
-res$IUCN <- as.factor(res$IUCN)
-levels(res$IUCN) <- c("All Species Retained", "CR Lost", "EN Lost", "VU Lost", "NT Lost (LC Only Retained)")
+res$IUCN <- factor(res$IUCN, levels = c("All Species Retained", "CR Lost", "EN Lost", "VU Lost", "NT Lost (LC Only Retained)"))
+# same for sex (to make plots appear in All-M-F order)
+res$sex <- factor(res$sex, levels = c("All", "M", "F"))
+
+# convert sex label list and labelling function to change facet labels
+sex_vals <- list(
+  'All' = "All specimens",
+  'M' = "Males",
+  'F' = "Females"
+)
+sex_labeller <- function(variable, value){
+  return(sex_vals[value])
+}
 
 # plot (subset by sex if required)
 # note that there's no point in adding error bars because the error's so small you can't see it
 p <- res %>% 
-  # filter(
-  #   sex != "All"
-  # ) %>%
-  ggplot(
-    aes(x = sr_prop, y = SES, colour = IUCN)
-    ) + 
-  geom_point() + 
+  filter(
+    sex != "All"
+  ) %>%
+  ggplot() + 
+  geom_point(aes(x = sr_prop, y = SES, colour = IUCN), size = 2.5, shape = 17) + 
+  geom_line(aes(x = sr_prop, y = SES), alpha = 0.6) +
 #  geom_errorbar(aes(ymin = SES - NULL_SE, ymax = SES + NULL_SE), width=0.005) +
   scale_x_reverse() + 
-  xlab("Remaining species richness") + ylab("Standard Effect Size") +
+#  scale_color_discrete(type = viridisLite::rocket(n = nlevels(res$IUCN))) + 
+  scale_color_discrete(type = hcl.colors(n = nlevels(res$IUCN)+1, palette = "Terrain")) + 
+  xlab("Remaining proportional species richness") + ylab("Standard Effect Size") + 
+  labs(colour = "IUCN Status Lost") + 
   geom_hline(yintercept = 0, linetype = "dashed") + 
   geom_hline(yintercept = -2, linetype = "dashed") +
   theme_light() + 
-  facet_wrap(~ sex, ncol = 1) + 
-  ggtitle(space)
+  facet_wrap(~ sex, ncol = 2, labeller = sex_labeller) + 
+#  ggtitle(space) + 
+  theme_bw() + 
+  theme(text=element_text(size=12,  family="Century Gothic"))
 
 p
 
@@ -378,7 +393,7 @@ png(
     "2_Patches", "4_OutputPlots", "2_Diversity_measures", "1_Diversity_extinction_risk", 
     png_filename
   ),
-  width = 1000, height = 1200, res = 150
+  width = 2000, height = 2000/3, res = 150
 )
 p
 dev.off()
