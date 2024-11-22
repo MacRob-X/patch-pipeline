@@ -32,6 +32,8 @@ avg_par <- "mean"
 # select whether to exclude grid cells with species richness below a certain threshold (e.g. 5)
 # set as 0 if no threshold wanted
 sr_threshold <- 5
+# select whether to exclude species with metric value below a certain percentile threshold (default is 75)
+sift_div_data <- FALSE
 # select whther to use liberal, conservative, or nominate IUCN data
 # "liberal" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
 # are assigned the highest threat level of the multiple species
@@ -53,7 +55,7 @@ pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLi
 ## Plotting parameters
 # select whether to filter data to only the top quartile of the metric of interest
 # this makes it a bit easier to see trends when plott
-sift_data <- FALSE
+sift_rast_data <- FALSE
 # Select whether to use binned (based on quantiles) or continuous colour scale
 col_scale_type <- "binned"
 # If binned, choose the number of quantiles to use
@@ -66,6 +68,49 @@ palette_choice <- "viridis"
 ## END EDITABLE CODE ##
 
 # Functions ----
+
+# filter diversity data by percentile (i.e. keep only species in the top nth percentile of the 
+# chosen diversity metric)
+filter_div_data <- function(div_dat, div_metric, separate_sexes = TRUE, pcile = 75){
+  
+  if(separate_sexes == TRUE){
+    
+    # get species and sex as extra columns
+    div_dat <- cbind(div_dat, get_spp_sex(div_dat))
+    
+    # get percentile values for each sex
+    sexes <- unique(div_dat[, "sex"])
+    sexed_filtered_dat <- list()
+    for(sex in sexes){
+      
+      # get percentile values for each sex
+      pcile_val <- quantile(div_dat[div_dat[, "sex"] == sex, div_metric], prob = pcile/100, na.rm = TRUE)
+      
+      # set metric value to NA for the species which have metric values lower than the percentile threshold
+      div_dat[div_dat[, "sex"] == sex, div_metric] <- ifelse(div_dat[div_dat[, "sex"] == sex, div_metric] < pcile_val, NA, div_dat[div_dat[, "sex"] == sex, div_metric])
+      
+      # remove all species for which the metric value is now set as NA
+      div_dat <- div_dat[!is.na(div_dat[, metric]), ]
+      
+    }
+    
+    # remove species/sex columns
+    div_dat <- div_dat[, colnames(div_dat) != "species" & colnames(div_dat) != "sex"]
+    
+    
+  } else if(separate_sexes == FALSE){
+    
+    # get percentile values
+    pcile_val <- quantile(div_dat[, div_metric], prob = pcile/100, na.rm = TRUE)
+    
+    # filter data to only values of metric which are above the percentile threshold
+    div_dat <- div_dat[div_dat[, metric] >= pcile_val, ]
+    
+  }
+ 
+  return(div_dat)
+  
+}
 
 # extract null raster from PAM file
 extract_null_rast <- function(pam_raw){
@@ -183,14 +228,20 @@ make_diversity_raster <- function(sexed_metric_vals, sex, pam, null_rast, avg_ty
   # get diversity metric values for the sex of interest
   div_vals <- as.matrix(sexed_metric_vals[[sex]])
   
+  # subset PAM to only the species in the sexed list of metric values
+  # (this step is only necessary if filtering the diversity data to the upper percentile of values
+  # separately for the different sexes - otherwise it should have no effect)
+  spp <- get_unique_spp(div_vals)
+  pam <- subset_pam(pam, spp)
+  
   # make wrapper function for averaging (allows selection of average type e.g. mean, median)
   avg <- function(vals, avg_type, na.rm = TRUE){
     return(get(avg_type)(vals, na.rm = na.rm))
   }
   
   # calculate average value of metric across all species in each grid cell
-  cell_avg <- apply(pam, 1, function(presence) {
-    species_present <- which(presence == 1)
+  cell_avg <- apply(pam, 1, function(one_row) {
+    species_present <- which(one_row == 1)
     if (length(species_present) > 0) {
       return(avg(div_vals[names(species_present), , drop = F], avg_type, na.rm = TRUE))
     } else {
@@ -551,6 +602,11 @@ pam_raw <- readRDS(
 
 # Data preparation ----
 
+# filter to top percentile of data, if required
+if(sift_div_data == TRUE){
+  div_data <- filter_div_data(div_data, metric, separate_sexes = TRUE, pcile = 75)
+}
+
 # extract null raster from PAM
 null_rast <- extract_null_rast(pam_raw)
 
@@ -626,13 +682,13 @@ terra::writeRaster(
   filename = here::here(
     "2_Patches", "3_OutputData", "6_Spatial_mapping", pam_res, space,
     div_raster_filename
-  ), overwrite = T
+  )
 )
 
 # Plotting ----
 
 # clear environment except variables used to generate raster filename
-rm(list=setdiff(ls(), c("clade", "space", "sex_match", "metric", "avg_par", "pam_res", "pam_type", "pam_seas", "sr_threshold", "sift_data", "col_scale_type", "nquants", "palette_choice", "plot_sr",  "apply_sr_threshold", "filter_div_raster", "get_world", "make_colour_breaks", "match_extents", "plot_div_raster")))
+rm(list=setdiff(ls(), c("clade", "space", "sex_match", "metric", "avg_par", "pam_res", "pam_type", "pam_seas", "sr_threshold", "sift_rast_data", "col_scale_type", "nquants", "palette_choice", "plot_sr",  "apply_sr_threshold", "filter_div_raster", "get_world", "make_colour_breaks", "match_extents", "plot_div_raster")))
 
 # load diversity raster
 div_raster_filename <- paste(clade, "patches", space, sex_match, metric, avg_par, pam_res, "Behrman", pam_type, pam_seas, "raster.tif", sep = ".")
@@ -656,7 +712,7 @@ sr_mask <- readRDS(
 diversity_raster_masked <- apply_sr_threshold(diversity_raster, sr_mask, exclude_sr_lyr = TRUE)
 
 # sift data to only the upper quartile of each layer
-if(sift_data == TRUE){
+if(sift_rast_data == TRUE){
   diversity_raster_masked <- filter_div_raster(diversity_raster_masked)
 }
 
