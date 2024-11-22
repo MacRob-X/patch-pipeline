@@ -89,17 +89,12 @@ crs <- as.character(raster::crs(null_rast)) # Behrmann cylindrical equal area pr
 
 
 # Extract PCA co-ordinates data and add species and sex columns
-# filter to males only for simplicity
-# NEED TO ALTER CODE SO SEX FILTERING HAPPENS _AFTER_ CENTROID DISTANCE CALCULATION
 pca_dat <- pca_all$x %>% 
   as.data.frame() %>% 
   mutate(
     species = sapply(strsplit(rownames(.), split = "-"), "[", 1),
     sex = sapply(strsplit(rownames(.), split = "-"), "[", 2)
-   )# %>% 
-  # filter(
-  #   sex == sex
-  # )
+   )
 
 # if specified, clip to only species for which we have at least one male and female specimen
 if(sex_match == "matchedsex"){
@@ -127,6 +122,16 @@ if(sex_match == "matchedsex"){
 spec_list <- unique(pca_dat$species)
 spec_keep <- colnames(pam_allspec)[colnames(pam_allspec) %in% spec_list]
 pam <- pam_allspec[, spec_keep]
+# for interest, print species which are in our colour data but not in the range maps
+spec_list[!(spec_list %in% colnames(pam_allspec))]
+
+# clip PCA data to only species in range maps
+#################################################################
+################# IMPORTANT NOTE          #######################
+## doing this actually seems to drastically change the output map
+## particularly for India, Arabia, Madagascar and the southern
+## tip of Africa
+pca_dat <- pca_dat[pca_dat$species %in% colnames(pam_allspec), ]
 
 # remove raw PAMs for RAM reasons
 rm(pam_allspec, pam_raw)
@@ -170,11 +175,12 @@ sr_mask <- ifelse(species_richness >= sr_threshold, TRUE, NA)
 # save mask for later use
 saveRDS(sr_mask,file = here::here(
   "2_Patches", "3_OutputData", "6_Spatial_mapping", pam_res, space,
-  paste(clade, "species_richness_mask", sr_threshold, sep = "_")))
+  paste(clade, pam_type, "species_richness_mask", sr_threshold, sep = "_")))
+
 # create raster of species richness
 sr_raster <- terra::rast(null_rast)
 species_richness[species_richness == 0] <- NA
-values(sr_raster) <- species_richness
+terra::values(sr_raster) <- species_richness
 # save sr raster for later use
 sr_rast_filename <- paste("speciesrichness", clade, "patches", space, sex_match, pam_res, "Behrman", pam_type, pam_seas, "raster.tif", sep = ".")
 terra::writeRaster(
@@ -185,7 +191,8 @@ terra::writeRaster(
   )
 )
 
-
+# NOTE - I should functionalise this and apply it across a list of the species, rather than
+# using a for loop - would be better in terms of RAM
 for(sex in sexes){
   
   cat("/r", sex)
@@ -321,7 +328,7 @@ world <- sf::st_transform(world, crs = terra::crs(div_raster))
 sr_mask <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "6_Spatial_mapping", pam_res, space,
-    paste(clade, "species_richness_mask", sr_threshold, sep = "_")
+    paste(clade, pam_type, "species_richness_mask", sr_threshold, sep = "_")
     )
 )
 # apply richness threshold to raster
@@ -388,13 +395,16 @@ dev.off()
 plot_sr <- TRUE
 ## Choose font "default" or name font (e.g. "Century Gothic", "Avenir")
 ## Use extrafont::fonts() to see available fonts
-font_par <- "Avenir"
+font_par <- "default"
 font_path <- "C:/Windows/Fonts/AvenirNextLTPro-Regular.ttf"
 ## Use viridis_c, viridis turbo palette or custom colour palette?
 palette_choice <- "viridis"
 
 # Add the custom font by specifying its path or name
-sysfonts::font_add(family = font_par, regular = font_path)
+if(font_par != "default"){
+  sysfonts::font_add(family = font_par, regular = font_path)
+}
+
 
 # get spatvector version of world map for plotting purposes (with terra::plot)
 world_vec <- terra::vect(world)
@@ -549,7 +559,9 @@ if(plot_sr == TRUE){
     add = TRUE,
   )
   # end custom font
-  showtext::showtext_end()
+  if(font_par != "default"){
+    showtext::showtext_end()
+    }
 }
 dev.off() 
 
