@@ -133,10 +133,8 @@ jnd2xyz.crc <- function (coldistres, center = TRUE, rotate = TRUE, rotcenter = c
 # load taxonomy
 taxo <- read.csv("./4_SharedInputData/BLIOCPhyloMasterTax_2019_10_28.csv", strings = F)
 
-
-# load patch pixel values (vRGB; uRGB) and remove any galloanseriformes or palaeognaths (to leave Neoaves only)
+# load patch pixel values (vRGB; uRGB)
 px_master <- readRDS("./2_Patches/1_InputData/patches.231030.rds")
-
 
 # remove any galloanseriformes or palaeognaths
 px <- px_master |> 
@@ -244,7 +242,7 @@ px.cie <- cbind(px.cie, lab, srgb)
 px.cie$hex <- hex
 
 # collate 
-px <- cbind(px, px.cone.dbl)
+px <- cbind(px, px.cone.dbl, px.cie)
 
 # map - JND xyzlum
 # converts the relative cone catch values to JNDs (allowing for simulataneous analysis and comparison of chromatic and
@@ -338,7 +336,7 @@ for (i in 1:nrow(px)) {
 
 
 # save
-saveRDS(px, "./2_Patches/3_OutputData/1_RawColourspaces/Neoaves.patches.231030.rawcolspaces.processed.240404.rds")
+saveRDS(px, "./2_Patches/3_OutputData/1_RawColourspaces/Neoaves.patches.231030.rawcolspaces.processed.240603.rds")
 
 
 
