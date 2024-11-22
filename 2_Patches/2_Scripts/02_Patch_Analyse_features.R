@@ -10,14 +10,14 @@ library(tidyverse)
 #setwd("~/Dropbox/Projects/Current/Bird_colouration/Colour_pattern_analysis/Patches/")
 
 # Custom functions ----
-source("./2_Patches/2_Scripts/2_BetaVersions/Patch_Plotting_functions_v1.r")
+source("./2_Patches/2_Scripts/R/patch_plotting.R")
 
 # ------------- #
 
 # Input data ----
 # (this is the output from 01_Patch_Colourspace_mapping_vX.R)
 
-px <- readRDS("./2_Patches/3_OutputData/1_RawColourspaces/Neoaves.patches.231030.rawcolspaces.processed.240603.rds")
+px <- readRDS("./2_Patches/3_OutputData/1_RawColourspaces/Passeriformes.patches.231030.rawcolspaces.rds")
 
 
 # ------------- #
@@ -100,7 +100,8 @@ cps.jndxyzlumr <- dat[complete.cases(dat),-c(1:2)]
 # collate into one list for saving
 # these dataframes contain the individual patch colourspaces (e.g. first three columns of first dataframe together make 
 # up the belly patch luminance-free tetrahedral colour space)
-non_PCA_colourspaces <- list(usmldbl = cps.usmldbl,
+non_PCA_colourspaces <- list(usml = cps.usml,
+                             usmldbl = cps.usmldbl,
                              usmldblr = cps.usmldblr,
                              xyz = cps.xyz,
                              xyzlum = cps.xyzlum,
@@ -114,13 +115,13 @@ non_PCA_colourspaces <- list(usmldbl = cps.usmldbl,
                              jndxyzlumr = cps.jndxyzlumr)
 
 
-saveRDS(non_PCA_colourspaces, "./2_Patches/3_OutputData/1_RawColourspaces/Neoaves.patches.231030.prePCAcolspaces.240829.rds")
+saveRDS(non_PCA_colourspaces, "./2_Patches/3_OutputData/1_RawColourspaces/Passeriformes.patches.231030.prePCAcolspaces.rds")
 
 
 # Perform PCA ----
 
 # reload the raw colour spaces (if necessary)
-non_PCA_colourspaces <- readRDS("./2_Patches/3_OutputData/1_RawColourspaces/Neoaves.patches.231030.prePCAcolspaces.240806.rds")
+non_PCA_colourspaces <- readRDS("./2_Patches/3_OutputData/1_RawColourspaces/Passeriformes.patches.231030.prePCAcolspaces.rds")
 
 
 cps.usml <- non_PCA_colourspaces$usml
@@ -138,67 +139,12 @@ cps.jndxyzlum <- non_PCA_colourspaces$jndxyzlum
 cps.jndxyzlumr <- non_PCA_colourspaces$jndxyzlumr
 
 # perform PCA for each colour space to get colour pattern spaces (excluding hex space - can't PCA a non-numeric)
+spaces <- c("usml", "usmldbl", "usmldblr", "xyz", "xyzlum", "xyzlumr", "lab", "cie", "sRGB", "jndxyz", "jndxyzlum", "jndxyzlumr")
+pca_spaces <- lapply(spaces, function(space, spaces_list) prcomp(spaces_list[[space]]), spaces_list = non_PCA_colourspaces)
+names(pca_spaces) <- spaces
 
-# USML
-pca.usml <- prcomp(non_PCA_colourspaces$usmldbl)
-summary(pca.usml)
-saveRDS(pca.usml, "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Neoaves.patches.231030.PCAcolspaces.usml.240829.rds")
-
-# USML+DBL
-pca.usmldbl <- prcomp(non_PCA_colourspaces$usmldbl)
-summary(pca.usmldbl)
-saveRDS(pca.usmldbl, "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Neoaves.patches.231030.PCAcolspaces.usmldbl.240806.rds")
-
-# USML+DBLr
-pca.usmldblr <- prcomp(non_PCA_colourspaces$usmldblr)
-summary(pca.usmldblr)
-saveRDS(pca.usmldblr, "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Neoaves.patches.231030.PCAcolspaces.usmldblr.240806.rds")
-
-# TCS xyz
-pca.xyz <- prcomp(non_PCA_colourspaces$xyz)
-summary(pca.xyz)
-saveRDS(pca.xyz, "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Neoaves.patches.231030.PCAcolspaces.xyz.240603.rds")
-
-# xyzlum
-pca.xyzlum <- prcomp(non_PCA_colourspaces$xyzlum)
-summary(pca.xyzlum)
-saveRDS(pca.xyzlum, "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Neoaves.patches.231030.PCAcolspaces.xyzlum.240603.rds")
-
-# xyzlumr
-pca.xyzlumr <- prcomp(non_PCA_colourspaces$xyzlumr)
-summary(pca.xyzlumr)
-saveRDS(pca.xyzlumr, "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Neoaves.patches.231030.PCAcolspaces.xyzlumr.240603.rds")
-
-# lab
-pca.lab <- prcomp(non_PCA_colourspaces$lab)
-summary(pca.lab)
-saveRDS(pca.lab, "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Neoaves.patches.231030.PCAcolspaces.lab.240603.rds")
-
-# cie
-pca.cie <- prcomp(non_PCA_colourspaces$cie)
-summary(pca.cie)
-saveRDS(pca.cie, "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Neoaves.patches.231030.PCAcolspaces.cie.240603.rds")
-
-# srgb
-pca.srgb <- prcomp(non_PCA_colourspaces$sRGB)
-summary(pca.srgb)
-saveRDS(pca.srgb, "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Neoaves.patches.231030.PCAcolspaces.srgb.240603.rds")
-
-# jndxyz
-pca.jndxyz <- prcomp(non_PCA_colourspaces$jndxyz)
-summary(pca.jndxyz)
-saveRDS(pca.jndxyz, "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Neoaves.patches.231030.PCAcolspaces.jndxyz.240603.rds")
-
-# jndxyzlum
-pca.jndxyzlum <- prcomp(non_PCA_colourspaces$jndxyzlum)
-summary(pca.jndxyzlum)
-saveRDS(pca.jndxyzlum, "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Neoaves.patches.231030.PCAcolspaces.jndxyzlum.240603.rds")
-
-# jndxyzlumr
-pca.jndxyzlumr <- prcomp(non_PCA_colourspaces$jndxyzlumr)
-summary(pca.jndxyzlumr)
-saveRDS(pca.jndxyzlumr, "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Neoaves.patches.231030.PCAcolspaces.jndxyzlumr.240603.rds")
-
+# Save list of PCA colour pattern spaces as RDS file
+saveRDS(pca_spaces, file = "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Passeriformes.patches.231030.PCAcolspaces.rds")
 
 # The scaled luminance version looks identical to the non-scaled luminance version but actually is ever so slightly different 
 # - I've tracked through the whole process and the scaling is working correctly, it just makes essentially no difference to 
@@ -206,54 +152,53 @@ saveRDS(pca.jndxyzlumr, "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_R
 # with both sets and check that qualitatively the results are unchanged
 
 # reload PCA (if necessary)
-pca.jndxyzlumr <- readRDS("./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/Neoaves.patches.231030.PCAcolspaces.jndxyzlumr.240603.rds")
+pca_spaces <- readRDS("./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Passeriformes.patches.231030.PCAcolspaces.rds")
 
 # plot the first two PCs (just for initial inspection - main visualisation below)
-plot(pca.xyz$x)
-plot(pca.xyzlum$x)
-plot(pca.xyzlumr$x)
-plot(pca.lab$x)
-plot(pca.cie$x)
-plot(pca.srgb$x)
-plot(pca.jndxyz$x)
-plot(pca.jndxyzlum$x)
-plot(pca.jndxyzlumr$x)
+plot(pca_spaces[["lab"]]$x)
 
 
 # Calculate centroid dists (to see which species is farthest from 'average')
 
-cdists <- data.frame(spec=rownames(pca.jndxyzlumr$x), xyz=NA, xyzlum=NA, xyzlumr=NA, lab=NA)
+# first initialise dataframe to store results
+n_spec <- nrow(pca_spaces[[1]]$x)
+cdists <- as.data.frame(matrix(ncol = length(pca_spaces), nrow = n_spec))
+colnames(cdists) <- names(pca_spaces)
+rownames(cdists) <- rownames(pca_spaces[[1]]$x)
 
-for (i in 1:nrow(pca.jndxyzlumr$x)) {
-  print(i)
-  cdists$xyz[i] <- dist(rbind(rep(0, ncol(pca.xyz$x)), pca.xyz$x[i,]))
-  cdists$xyzlum[i] <- dist(rbind(rep(0, ncol(pca.xyzlum$x)), pca.xyzlum$x[i,]))
-  cdists$xyzlumr[i] <- dist(rbind(rep(0, ncol(pca.xyzlumr$x)), pca.xyzlumr$x[i,]))
-  cdists$lab[i] <- dist(rbind(rep(0, ncol(pca.lab$x)), pca.lab$x[i,]))
-  cdists$jndxyzlum[i] <- dist(rbind(rep(0, ncol(pca.jndxyzlum$x)), pca.jndxyzlum$x[i,]))
-  cdists$jndxyzlumr[i] <- dist(rbind(rep(0, ncol(pca.jndxyzlumr$x)), pca.jndxyzlumr$x[i,]))
+# # calculate centroid distances for species of interest (i.e. each row) in each space
+for (i in 1:n_spec) {
+  
+  cat("\r", i)
+  # calculate centroid distances for species of interest in each space
+  cdists[i, ] <- unlist(lapply(spaces, function(space, pca_list){
+    dist(rbind(rep(0, ncol(pca_list[[space]]$x)), pca_list[[space]]$x[i,]))
+  }, pca_list = pca_spaces))
+ 
 }
 
 # get species/sex which are maximally distant in each colour space
-cdists$spec[cdists$xyz == max(cdists$xyz)]
-cdists$spec[cdists$xyzlum == max(cdists$xyzlum)]
-cdists$spec[cdists$xyzlumr == max(cdists$xyzlumr)]
-cdists$spec[cdists$lab == max(cdists$lab)]
-cdists$spec[cdists$jndxyzlum == max(cdists$jndxyzlum)]
-cdists$spec[cdists$jndxyzlumr == max(cdists$jndxyzlumr)]
-# and put the entire columns in order
-ordered <- cdists$jndxyzlumr
-names(ordered) <- cdists$spec
-ordered <- order(ordered, decreasing = TRUE)
-orderedlum <- cdists[ordered,]
+rownames(cdists)[cdists$usml == max(cdists$usml)]
+rownames(cdists)[cdists$usmldbl == max(cdists$usmldbl)]
+rownames(cdists)[cdists$usmldblr == max(cdists$usmldblr)]
+rownames(cdists)[cdists$xyz == max(cdists$xyz)]
+rownames(cdists)[cdists$xyzlum == max(cdists$xyzlum)]
+rownames(cdists)[cdists$xyzlumr == max(cdists$xyzlumr)]
+rownames(cdists)[cdists$lab == max(cdists$lab)]
+rownames(cdists)[cdists$cie == max(cdists$cie)]
+rownames(cdists)[cdists$sRGB == max(cdists$sRGB)]
+rownames(cdists)[cdists$jndxyz == max(cdists$jndxyz)]
+rownames(cdists)[cdists$jndxyzlum == max(cdists$jndxyzlum)]
+rownames(cdists)[cdists$jndxyzlumr == max(cdists$jndxyzlumr)]
+
 
 # perform UMAP to visualise colour space in two dimensions
-umap.xyz <- umap::umap(pca.xyz$x)
-umap.xyzlum <- umap::umap(pca.xyzlum$x)
-umap.xyzlumr <- umap::umap(pca.xyzlumr$x)
-umap.lab <- umap::umap(pca.lab$x)
-umap.jndxyzlum <- umap::umap(pca.jndxyzlum$x)
-umap.jndxyzlumr <- umap::umap(pca.jndxyzlumr$x)
+umap.xyz <- umap::umap(pca_spaces[["xyz"]]$x)
+umap.xyzlum <- umap::umap(pca_spaces[["xyzlum"]]$x)
+umap.xyzlumr <- umap::umap(pca_spaces[["xyzlumr"]]$x)
+umap.lab <- umap::umap(pca_spaces[["lab"]]$x)
+umap.jndxyzlum <- umap::umap(pca_spaces[["jndxyzlum"]]$x)
+umap.jndxyzlumr <- umap::umap(pca_spaces[["jndxyzlumr"]]$x)
 
 plot(umap.xyz$layout)
 plot(umap.xyzlum$layout)
@@ -264,38 +209,42 @@ plot(umap.jndxyzlumr$layout)
 
 
 # Plot PCA axes and UMAP
-plot.FourPatch(obj1 = pca.jndxyzlumr$x[, 1:2], 
-             obj2 = pca.jndxyzlumr$x[, 3:4],
-             obj3 = pca.jndxyzlumr$x[, 5:6],
-             obj4 = umap.jndxyzlumr$layout,
-             filepath = "./Plots/featurespaces/patches/patches.jndxyzlumr.pca1-6.umap.back.png",
+
+# choose space of interest
+pca_space <- pca_spaces[["lab"]]
+
+plot.FourPatch(obj1 = pca_space$x[, 1:2], 
+             obj2 = pca_space$x[, 3:4],
+             obj3 = pca_space$x[, 5:6],
+             obj4 = umap.lab$layout,
+             filepath = "./Plots/featurespaces/patches/patches.lab.pca1-6.umap.back.png",
              asp = T)
 
 # Plot PC axes 1-8 with associated variance proportions
-plot.FourPatch(obj1 = pca.jndxyzlumr$x[, 1:2], 
-               obj2 = pca.jndxyzlumr$x[, 3:4],
-               obj3 = pca.jndxyzlumr$x[, 5:6],
-               obj4 = pca.jndxyzlumr$x[, 7:8],
-               filepath = "./Plots/featurespaces/patches/patches.jndxyzlumr.pca1-8.png",
-               PCobj = pca.jndxyzlumr,
+plot.FourPatch(obj1 = pca_space$x[, 1:2], 
+               obj2 = pca_space$x[, 3:4],
+               obj3 = pca_space$x[, 5:6],
+               obj4 = pca_space$x[, 7:8],
+               filepath = "./Plots/featurespaces/patches/patches.lab.pca1-8.png",
+               PCobj = pca_space,
                asp = T)
 
 # Plot PC axes 9-16 with associated variance proportions
-plot.FourPatch(obj1 = pca.jndxyzlumr$x[, 9:10], 
-               obj2 = pca.jndxyzlumr$x[, 11:12],
-               obj3 = pca.jndxyzlumr$x[, 13:14],
-               obj4 = pca.jndxyzlumr$x[, 15:16],
-               filepath = "./Plots/featurespaces/patches/patches.jndxyzlumr.pca9-16.png",
-               PCobj = pca.jndxyzlumr,
+plot.FourPatch(obj1 = pca_space$x[, 9:10], 
+               obj2 = pca_space$x[, 11:12],
+               obj3 = pca_space$x[, 13:14],
+               obj4 = pca_space$x[, 15:16],
+               filepath = "./Plots/featurespaces/patches/patches.lab.pca9-16.png",
+               PCobj = pca_space,
                asp = T)
 
 # Plot PC axes 17-24 with associated variance proportions
-plot.FourPatch(obj1 = pca.jndxyzlumr$x[, 17:18], 
-               obj2 = pca.jndxyzlumr$x[, 19:20],
-               obj3 = pca.jndxyzlumr$x[, 21:22],
-               obj4 = pca.jndxyzlumr$x[, 23:24],
-               filepath = "./Plots/featurespaces/patches/patches.jndxyzlumr.pca17-24.png",
-               PCobj = pca.jndxyzlumr,
+plot.FourPatch(obj1 = pca_space$x[, 17:18], 
+               obj2 = pca_space$x[, 19:20],
+               obj3 = pca_space$x[, 21:22],
+               obj4 = pca_space$x[, 23:24],
+               filepath = "./Plots/featurespaces/patches/patches.lab.pca17-24.png",
+               PCobj = pca_space,
                asp = T)
 
 # Plot histogram of density for each PC axis (to see spread in each axis)
@@ -408,7 +357,7 @@ text(umap.jndxyzlumr$layout[,1],
 # Based on https://stats.stackexchange.com/questions/229092/how-to-reverse-pca-and-reconstruct-original-variables-from-several-principal-com
 
 # get original data
-px <- readRDS("./Outputs/features/patches/Neoaves.patches.231030.processed.240322.rds")
+px <- readRDS("./Outputs/features/patches/Passeriformes.patches.231030.processed.240322.rds")
 
 cps.jndxyzlumr <- data.frame(px$x.jndlumr, px$y.jndlumr, px$z.jndlumr, px$lum.jndlumr, 
                              row.names = paste(px$species, px$sex, sep = "-"))

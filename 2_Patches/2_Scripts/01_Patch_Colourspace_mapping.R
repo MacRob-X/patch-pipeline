@@ -16,7 +16,7 @@ library(rgl)
 
 # Read in cone catch functions -----
 # maps pixels in NEF image to cone stimulation values
-source("./3_SharedScripts/1_StableVersions/00_Cone_mapping_functions_v8.R") # pixel vals need to be in range 0-100
+source("./3_SharedScripts/00_Cone_mapping_functions_v8.R") # pixel vals need to be in range 0-100
 
 # edited pavo function to calculate JND-space coords ----
 
@@ -356,7 +356,7 @@ for (i in 1:nrow(px)) {
 
 
 # save
-saveRDS(px, "./2_Patches/3_OutputData/1_RawColourspaces/Passeriformes.patches.231030.rawcolspaces.processed.240925.rds")
+saveRDS(px, "./2_Patches/3_OutputData/1_RawColourspaces/Passeriformes.patches.231030.rawcolspaces.rds")
 
 
 
