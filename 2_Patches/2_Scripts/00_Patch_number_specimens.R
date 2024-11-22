@@ -1,3 +1,6 @@
+# load libraries
+library(dplyr)
+
 # clear environment
 rm(list=ls())
 
@@ -35,6 +38,15 @@ taxo %>%
   unique() %>% 
   length()
 
+# count Passeriforme species in Jetz taxonomy
+taxo %>% 
+  filter(
+    IOCOrder == "PASSERIFORMES", 
+  ) %>% 
+  magrittr::extract2("TipLabel") %>% 
+  unique() %>% 
+  length()
+
 # count species for which we have male and female specimens
 # get species for which we have male specimens
 male_species <- px %>% 
@@ -54,8 +66,22 @@ female_species <- px %>%
     species
   ) %>% 
   unique()
-# check how many species are different among the male and female species
+# check how many species have both male and female data
 male_species %>% 
+  inner_join(
+    female_species
+  ) %>% 
+  nrow()
+
+# check how many passeriforme species have both male and female data
+male_species %>% 
+  left_join(
+    taxo,
+    by = join_by(species == TipLabel)
+  ) %>% 
+  filter(
+    IOCOrder == "PASSERIFORMES"
+  ) %>% 
   inner_join(
     female_species
   ) %>% 
