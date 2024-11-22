@@ -8,6 +8,7 @@ rm(list=ls())
 # load libraries
 library(dplyr)
 library(ggfortify)
+library(ggtree)
 
 # create colour palette (colours taken from ggsci palette pal_simpsons(palette = "springfield"))
 springfield <- c(HomerYellow = "#FED439", FrinkPink = "#FD8CC1", HomerBlue = "#709AE1", DuffRed = "#C80813", 
@@ -192,11 +193,11 @@ pca_all <- readr::read_rds(
   )
 )
 
-# load umap patch data (output from 02b_Patch_Umap_iterations.R)
+# load umap patch data (output from 02b_Patch_Umap_iterations.R - NN = 25)
 umap_jndxyzlum <- readr::read_rds(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
-    "Neoaves.patches.pca.jndxyzlum.UMAPs.iterations.240603.rds"
+    "Neoaves.patches.pca.jndxyzlum.nnUMAPs.25.35.45.55.240603.rds"
   )
 ) %>% 
   magrittr::extract2(1) %>% 
@@ -249,11 +250,22 @@ rownames(nn_5) <- rownames(pca_dat)
 colnames(nn_5) <- c("nn_5_dist")
 glob_dist <- bind_cols(glob_dist, nn_5)
 
+# 10nn
+nn_10 <- as.data.frame(dispRity::dispRity(
+  pca_dat, 
+  metric = mean.nn.dist, nn = 10, rownames = rownames(pca_dat)
+)$disparity[[1]][[1]])
+rownames(nn_5) <- rownames(pca_dat)
+colnames(nn_5) <- c("nn_5_dist")
+glob_dist <- bind_cols(glob_dist, nn_10)
+
 # check density of centroid distances/knn values
 ggplot() + 
   geom_histogram(data = glob_dist, aes(x = centr_dist), bins = 50)
 ggplot() + 
   geom_histogram(data = glob_dist, aes(x = nn_5_dist), bins = 50)
+ggplot() + 
+  geom_histogram(data = glob_dist, aes(x = nn_10_dist), bins = 50)
 
 # attach IUCN categories to distance data
 glob_dist$iucn <- iucn_dat$category[match(rownames(glob_dist), iucn_dat$specimen)] # note that since I've already matched the order the match() function is redundant here, but I'm leaving it in as a failsafe
@@ -277,7 +289,7 @@ write.csv(
 all <- read.csv(
   here::here(
     "2_Patches", "3_OutputData", "4_Diversity_measures",
-    "Neoaves.patches.231030.PCAcolspaces.jndxyzlum.240603.diversitymeasures.csv"
+    "Neoaves.patches.231030.PCAcolspaces.jndxyzlum.240603.diversitymeasures_withnn10.csv"
   ), 
   row.names = 1
 )
@@ -352,6 +364,349 @@ anova(mod_nn_5)
 summary(mod_centr_dist)
 summary(mod_nn_5)
 
+
+# Plot phylogeny coloured by diversity metric ----
+# need 'all' loaded in (see above)
+
+# load first 100 trees of Hackett backbone full trees
+phy <- ape::read.tree(
+  here::here(
+    "4_SharedInputData", "First100_AllBirdsHackett1.tre"
+  )
+)
+
+# load taxonomy and rename columns
+taxo <- read.csv(
+  here::here(
+    "4_SharedInputData", "BLIOCPhyloMasterTax_2019_10_28.csv"
+  ),
+  strings = F
+) %>% 
+  rename(
+    genus = GenusName,
+    family = BLFamilyLatin,
+    order = IOCOrder,
+    taxon_subgroup = Taxon_subgroup
+    ) %>% 
+  select(
+    TipLabel, genus, family, order, taxon_subgroup
+  ) %>% 
+  mutate(
+    genus = janitor::make_clean_names(genus, allow_dupes = T),
+    family = janitor::make_clean_names(family, allow_dupes = T),
+    order = janitor::make_clean_names(order, allow_dupes = T),
+    taxon_subgroup = janitor::make_clean_names(taxon_subgroup, allow_dupes = T),
+  )
+
+# choose one tree for plotting purposes
+tree <- phy[[1]]
+
+## Editable Code ##
+## Choose sex and diversity metric ("centr_dist", "nn_5_dist", "nn_10_dist") to work with
+sex_choice <- "M"
+div_metric_choice <- "centr_dist"
+## Log transform diversity metric?
+log_choice <- TRUE
+## Set max and min of colour scale equal to grand max and min to allow direct comparison betweeen
+## plots for males and females?
+colour_min_max <- FALSE
+## Choose taxonomic level to average at ("species", "genus", "family", "order", "taxon_subgroup")
+tax_level <- "family"
+## Calculate ancestral state? Otherwise the code will plot the traits at the tips
+anc_state <- FALSE
+## Drop depauperate clades? Specify min. number of species a clade must contain for it to be included
+## If FALSE, depauperate clades are not dropped
+## N.B. only applies if tax_level == "family" | "order" | "taxon_subgroup"
+drop_depaup <- 8
+## End Editable Code ##
+
+
+# create working version of PCA data with species and sex as columns
+phylo_dat <- all %>% 
+  filter(
+    iucn != "All"
+  ) %>% 
+  mutate(
+    species = sapply(strsplit(rownames(.), split = "-"), "[", 1),
+    #    sex = janitor::make_clean_names(sapply(strsplit(rownames(.), split = "-"), "[", 2), allow_dupes = T)
+    sex = sapply(strsplit(rownames(.), split = "-"), "[", 2)
+  ) %>% 
+  filter(
+    sex == sex_choice
+  )
+
+# rename rows as species only
+rownames(phylo_dat) <- phylo_dat$species
+
+# average at higher taxonomic level, if specified
+if(tax_level != "species"){
+  
+  phylo_dat <- phylo_dat %>% 
+  left_join(taxo, by = join_by(species == TipLabel))
+  
+  phylo_dat$tax_choice <- phylo_dat[, tax_level]
+
+  
+  # average by chosen taxonomic level
+  taxon_means <- phylo_dat %>% 
+    group_by(tax_choice) %>% 
+    summarise(div_metric_mean = mean(get(div_metric_choice)))
+  
+  # add means as column in data
+  phylo_dat <- phylo_dat %>% 
+    left_join(taxon_means, by = "tax_choice")
+  
+  rownames(phylo_dat) <- phylo_dat$species
+  
+  orig_metric_choice <- div_metric_choice
+  div_metric_choice <- "div_metric_mean"
+}
+
+
+# trim data to match tree and vice versa (shouldn't really be any species that aren't in the phylogeny anyway
+# but best to check)
+if(tax_level == "species"){
+  
+  phylo_dat <- phylo_dat[rownames(phylo_dat) %in% tree$tip.label, , drop = F]
+  tree <- ape::drop.tip(tree, tip = setdiff(tree$tip.label, rownames(phylo_dat)))
+  
+  # reorder distance data to match phylogeny
+  phylo_dat <- phylo_dat[match(tree$tip.label, rownames(phylo_dat)), , drop = F]
+  identical(rownames(phylo_dat), tree$tip.label)
+}
+
+
+# if want tree at genus level, trim to single member of each genus and rename tips as genus only
+if(tax_level == "genus"){
+  
+  # get list of unique genera
+  tips <- tree$tip.label 
+  genera <- unique(sapply(strsplit(tips, "_"), function(x) x[1]))
+  
+  # drop all but one of each
+  ii <- sapply(genera, function(x, y) grep(x, y)[1], y = tips)
+  tree <- ape::drop.tip(tree, setdiff(tree$tip.label, tips[ii]))
+  
+  # drop tree tips which aren't in data (and vice versa)
+  phylo_dat <- phylo_dat[rownames(phylo_dat) %in% tree$tip.label, , drop = F]
+  tree <- ape::drop.tip(tree, tip = setdiff(tree$tip.label, rownames(phylo_dat)))
+  
+  # rename tree tips to be genus name only
+  tree$tip.label <- janitor::make_clean_names(sapply(strsplit(tree$tip.label, "_"),function(x) x[1]))
+  
+  # rename phylo_dat species column and rownames as genus only
+  phylo_dat$species <- phylo_dat$genus
+  rownames(phylo_dat) <- phylo_dat$genus
+  
+  # trim and reorder data to match tree
+  phylo_dat <- phylo_dat[match(tree$tip.label, rownames(phylo_dat)), , drop = F]
+  
+  # check that tree tips match data
+  identical(rownames(phylo_dat), tree$tip.label)
+  
+}
+
+# if want tree at higher taxonomic level (family, order, taxon subgroup)
+if(tax_level == "family" | tax_level == "order" | tax_level == "taxon_subgroup") {
+  
+  # drop species not in phylogeny (shouldn't be any to drop)
+  phylo_dat <- phylo_dat[rownames(phylo_dat) %in% tree$tip.label, , drop = F]
+  
+  # drop depauperate clades
+  if(drop_depaup != FALSE) {
+    
+    # get clades with fewer species than specified minimum
+    clades_to_keep <- phylo_dat %>% 
+      count(get(tax_level)) %>% 
+      filter(
+        n >= drop_depaup
+      ) %>% 
+      magrittr::extract2(1)
+    
+    # remove these clades from data
+    phylo_dat <- phylo_dat %>% 
+      filter(
+        tax_choice %in% clades_to_keep
+      )
+    
+  }
+  
+  # get only first row of each taxonomic family/order/tax subgroup
+  phylo_dat <- phylo_dat %>% 
+    group_by(get(tax_level)) %>% 
+    filter(row_number() == 1)
+  phylo_dat <- as.data.frame(phylo_dat)
+  rownames(phylo_dat) <- phylo_dat$species
+  
+  
+  # filter tree to one species per taxon
+  tree <- ape::drop.tip(tree, tip = setdiff(tree$tip.label, rownames(phylo_dat)))
+  
+  # reorder distance data to match phylogeny
+  phylo_dat <- phylo_dat[match(tree$tip.label, rownames(phylo_dat)), , drop = F]
+  identical(rownames(phylo_dat), tree$tip.label)
+  
+  # overwrite species column and rownames as taxon
+  phylo_dat$species <- phylo_dat[, tax_level]
+  rownames(phylo_dat) <- phylo_dat[, tax_level]
+  
+  # overwrite tree tips with taxon only
+  tree$tip.label <- phylo_dat[, tax_level]
+}
+
+
+# calculate ancestral states (for plotting purposes only)
+
+if(anc_state == TRUE) {
+  ancest_state_bm <- phytools::fastAnc(tree, phylo_dat[, div_metric_choice], CI = TRUE, vars = TRUE)
+  
+  # produce df to use for plotting (can log transform phylo_dat[, div_metric_choice] and ancest_state_bm$ace if desired)
+  td <- data.frame(node = tidytree::nodeid(tree, rownames(phylo_dat)),
+                   div_metric = phylo_dat[, div_metric_choice])
+  nd <- data.frame(node = names(ancest_state_bm$ace), div_metric = ancest_state_bm$ace)
+  d <- rbind(td, nd)
+  d$node <- as.numeric(d$node)
+  
+  # put data and tree together with full_join()
+  phylo_dat_tree <- full_join(tree, d, by = "node")
+  rm(td, nd, d)
+} else if(anc_state == FALSE) {
+  
+  # get tree trait tip data
+  td <- data.frame(node = tidytree::nodeid(tree, rownames(phylo_dat)),
+                     div_metric = phylo_dat[, div_metric_choice])
+  td$node <- as.numeric(td$node)
+  
+  # put data and tree together
+  phylo_dat_tree <- full_join(tree, td, by = "node")
+  rm(td)
+
+}
+
+
+# Plotting
+
+# set plotting parameters
+if(tax_level == "species"){
+  branch_width <- 0.35
+  text_size <- 0.55
+  line_width <- 0.2
+  tip_size <- 1
+  folder <- "species_level"
+} else if (tax_level == "genus"){
+  branch_width <- 0.35
+  text_size <- 0.65
+  line_width <- 0.3
+  tip_size <- 1
+  folder <- "genus_level"
+} else if (tax_level == "family"){
+  branch_width <- 0.35
+  text_size <- 1.5
+  line_width <- 0.7
+  tip_size <- 1
+  folder <- "family_level"
+} else if (tax_level == "order"){
+  branch_width <- 0.35
+  text_size <- 2
+  line_width <- 1
+  tip_size <- 1
+  folder <- "order_level"
+} else if (tax_level == "taxon_subgroup"){
+  branch_width <- 0.7
+  text_size <- 2
+  line_width <- 2
+  tip_size <- 4
+  folder <- "taxon_subgroup_level"
+}
+
+
+# Plot ancestral states on phylogeny with colour according to centroid distance
+# Note that I'm not actually interested in the ancestral states but I think it will make the plot look nicer
+# and I guess it could show something interesting
+
+if(anc_state == TRUE) {
+  
+  # Create the base plot
+  if(log_choice == T){
+    p <- ggtree::ggtree(phylo_dat_tree, aes(color = log(div_metric)),
+                        layout = "circular",
+                        ladderize = TRUE, continuous = "colour", size = branch_width) +    # adjust size here to make branches thinner
+      scale_color_viridis_c(option = "D") # gradient allows us to specify how many colours to use in scale 
+  } else if (log_choice == F){
+    p <- ggtree::ggtree(phylo_dat_tree, aes(color = div_metric),
+                        layout = "circular",
+                        ladderize = TRUE, continuous = "colour", size = branch_width) +    # adjust size here to make branches thinner
+      scale_color_viridis_c(option = "D") # gradient allows us to specify how many colours to use in scale 
+  }
+  # adjust tip label text size and line colours/weights
+  p <- p + ggtree::geom_tiplab(offset = 1, size = text_size) + 
+  #  theme_tree2() + # this line adds the scale bar
+    theme(panel.grid.major = element_line(color = "black", linewidth = .2),
+          panel.grid.minor = element_line(color = "lightgrey", linewidth = .2),
+          panel.grid.major.y = element_blank(),
+          legend.position.inside = c(0.15, 0.1))
+  # set colour scale limits, if specified (note that this doesn't currently work if a tax_level other than
+  # species is selected - this is because during the taxonomic averaging process, div_metric_choice is redefined 
+  # as "div_metric_mean", which is not a valid metric in all)
+  if(colour_min_max == T) {
+    colour_limits <- c(
+      min(all[, orig_metric_choice]),
+      max(all[, orig_metric_choice])
+    )
+    if(log_choice == T){
+      colour_limits <- log(colour_limits)
+    }
+    p <- p + 
+      scale_color_viridis_c(
+        option = "D", 
+        limits = colour_limits
+        )
+  }
+  
+  revts(p)  # reverses timescale by setting most recent tip to 0
+  # save as portrait 40 x 40 inch pdf for species-level
+  # 15x15 inch for genus-level
+  # 6x6 inch for family-level
+  # in .\2_Patches\4_OutputPlots\2_Diversity_measures
+
+}
+
+# Plot traits only on tips (if ancestral state not estimated)
+if(anc_state == FALSE) {
+  
+  # create the base plot
+  if(log_choice == TRUE) {
+    p <- ggtree::ggtree(phylo_dat_tree,
+                        layout = "circular", ladderize = TRUE, size = branch_width) + 
+      geom_tippoint(aes(colour = log(div_metric)), size = tip_size) + 
+      scale_color_viridis_c(option = "D")
+    p <- p + 
+      geom_tiplab(offset = 3, size = text_size)
+    
+    revts(p)
+  }
+}
+
+# save as svg (if requested)
+if(log_choice == T) {
+  log_filename <- "LOG_"
+} else {
+  log_filename <- ""
+}
+
+svg(
+  here::here(
+    "2_Patches", "4_OutputPlots", "2_Diversity_measures", "2_Diversity_phylogeny",
+    folder, paste0("patch_jndxyzlum_", log_filename, orig_metric_choice, "_", sex_choice, "_", "phylogeny.svg")
+    ), 
+  width = 6, height = 6
+)
+
+
+
+revts(p)
+
+dev.off()
 
 # -------------------- End of code that is useful for Confirmation Review -----------------------------------#
 
@@ -447,7 +802,7 @@ ggpubr::ggarrange(
 
 
 
-## Just for fun, let's look at distance to centroid vs midpoint of latitudinal range ----
+# Midpoint of latitudinal range vs distance to centroid ----
 lat_data <- readr::read_csv(
   here::here(
     "4_SharedInputData", "Cooney_etal_2022", "data_cooney_etal_latitude.csv"
