@@ -22,13 +22,15 @@ source(
   )
 )
 
-## EDITABLE CODE ##
+## EDITABLE CODE ## ----
+# Select subset of species ("Neoaves" or "Passeriformes")
+clade <- "Neoaves"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
-space <- "usml"
+space <- "lab"
 # select sex ("M", "F", "All")
-sex <- "F"
+sex <- "All"
 # select metric ("centr-dist", "nn-k", "nn-count")
 # note that nn-k is EXTREMELY slow to run - needs parallelisation (but will probably still
 # be too slow to run)
@@ -42,25 +44,25 @@ n_sims <- 1000
 # are assigned the lowest threat level of the multiple species
 # "nominate" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
 # are assigned the threat level of the BL species that corresponds to the nominate subspecies
-iucn_type <- "conservative"
+iucn_type <- "nominate"
 ## END EDITABLE CODE ##
 
 # Load data ----
 
 # load patch data (PCA of whichever colourspace - generated in 02_Patch_Analyse_features.R)
-
+pca_filename <- paste(clade, "patches.231030.PCAcolspaces", space, "240603", "rds", sep = ".")
 pca_all <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
-    paste0("Neoaves.patches.231030.PCAcolspaces.", space, ".240829.rds")
+    pca_filename
   )
 )
 
 # load IUCN Red List data
-iucn_filename <- paste("iucn_2024", iucn_type, ".csv")
+iucn_filename <- paste0("iucn_2024_", iucn_type, ".csv")
 iucn <- read.csv(
   here::here(
-    "4_SharedInputData", "iucn_2024_conservative.csv"
+    "4_SharedInputData", iucn_filename
   )
 )
 
@@ -151,7 +153,18 @@ trait_vec <- matrix(traits[all,], ncol=dim(traits)[2])
 res[1,2] <- length(all)
 res[1,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
 
+# get collections of species with threat levels sequentially trimmed
 noCR <- rownames(species)[species$iucn_cat != "CR"]
+noEN <- rownames(species)[species$iucn_cat != "CR" & species$iucn_cat != "EN"]
+noVU <- rownames(species)[species$iucn_cat != "CR" & species$iucn_cat != "EN" & species$iucn_cat != "VU"]
+noNT <- rownames(species)[species$iucn_cat != "CR" & species$iucn_cat != "EN" & species$iucn_cat != "VU" & species$iucn_cat != "NT"]
+
+# for parallelisation, set up a cluster using the number of cores (2 less than total number of laptop cores)
+no_cores <- parallel::detectCores() - 2
+cl <- parallel::makeCluster(no_cores)
+# export necessary objects to the cluster
+parallel::clusterExport(cl, c("all", "noCR", "noEN", "noVU", "noNT", "traits", "metric_get", "dispRity", metric_get))
+
 # extract traits for species in the random community
 trait_vec <- matrix(traits[noCR,], ncol=dim(traits)[2])
 # calculate SR & Mean distance to centroid
@@ -159,14 +172,6 @@ res[2,2] <- length(noCR)
 res[2,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
 
 # Use parLapply to replace the for loop with a parallelised apply function for speed
-
-# Set up a cluster using the number of cores (2 less than total number of laptop cores)
-no_cores <- parallel::detectCores() - 2
-cl <- parallel::makeCluster(no_cores)
-
-# export necessary objects to the cluster
-parallel::clusterExport(cl, c("all", "noCR", "traits", "metric_get", "dispRity", metric_get))
-
 sims[1, ] <- unlist(
   parallel::parLapply(
     cl = cl,
@@ -184,15 +189,13 @@ sims[1, ] <- unlist(
   )
 )
 
-# stop the cluster
-stopCluster(cl)
 
 # add results to table
 res[2,4] <- mean(sims)
 res[2,5] <- sd(sims)
 res[2,6] <- sd(sims)/sqrt(length(sims))
 
-noEN <- rownames(species)[species$iucn_cat != "CR" & species$iucn_cat != "EN"]
+
 # extract traits for species in the random community
 trait_vec <- matrix(traits[noEN,], ncol=dim(traits)[2])
 # calculate SR & Mean distance to centroid
@@ -200,14 +203,6 @@ res[3,2] <- length(noEN)
 res[3,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
 
 # Use parLapply to replace the for loop with a parallelised apply function for speed
-
-# Set up a cluster using the number of cores (2 less than total number of laptop cores)
-no_cores <- parallel::detectCores() - 2
-cl <- parallel::makeCluster(no_cores)
-
-# export necessary objects to the cluster
-parallel::clusterExport(cl, c("all", "noEN", "traits", "metric_get", "dispRity", metric_get))
-
 sims[1, ] <- unlist(
   parallel::parLapply(
     cl = cl,
@@ -225,15 +220,11 @@ sims[1, ] <- unlist(
   )
 )
 
-# stop the cluster
-stopCluster(cl)
-
 # add results to table
 res[3,4] <- mean(sims)
 res[3,5] <- sd(sims)
 res[3,6] <- sd(sims)/sqrt(length(sims))
 
-noVU <- rownames(species)[species$iucn_cat != "CR" & species$iucn_cat != "EN" & species$iucn_cat != "VU"]
 # extract traits for species in the random community
 trait_vec <- matrix(traits[noVU,], ncol=dim(traits)[2])
 # calculate SR & Mean distance to centroid
@@ -241,14 +232,6 @@ res[4,2] <- length(noVU)
 res[4,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
 
 # Use parLapply to replace the for loop with a parallelised apply function for speed
-
-# Set up a cluster using the number of cores (2 less than total number of laptop cores)
-no_cores <- parallel::detectCores() - 2
-cl <- parallel::makeCluster(no_cores)
-
-# export necessary objects to the cluster
-parallel::clusterExport(cl, c("all", "noVU", "traits", "metric_get", "dispRity", metric_get))
-
 sims[1, ] <- unlist(
   parallel::parLapply(
     cl = cl,
@@ -266,14 +249,11 @@ sims[1, ] <- unlist(
   )
 )
 
-# stop the cluster
-stopCluster(cl)
 
 res[4,4] <- mean(sims)
 res[4,5] <- sd(sims)
 res[4,6] <- sd(sims)/sqrt(length(sims))
 
-noNT <- rownames(species)[species$iucn_cat != "CR" & species$iucn_cat != "EN" & species$iucn_cat != "VU" & species$iucn_cat != "NT"]
 # extract traits for species in the random community
 trait_vec <- matrix(traits[noNT,], ncol=dim(traits)[2])
 # calculate SR & Mean distance to centroid
@@ -281,14 +261,6 @@ res[5,2] <- length(noNT)
 res[5,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
 
 # Use parLapply to replace the for loop with a parallelised apply function for speed
-
-# Set up a cluster using the number of cores (2 less than total number of laptop cores)
-no_cores <- parallel::detectCores() - 2
-cl <- parallel::makeCluster(no_cores)
-
-# export necessary objects to the cluster
-parallel::clusterExport(cl, c("all", "noNT", "traits", "metric_get", "dispRity", metric_get))
-
 sims[1, ] <- unlist(
   parallel::parLapply(
     cl = cl,
@@ -327,7 +299,7 @@ res$SR <- as.numeric(res$SR)
 res$Raw <- as.numeric(res$Raw)
 res$NULL_MEAN <- as.numeric(res$NULL_MEAN)
 res$NULL_SD <- as.numeric(res$NULL_SD)
-res$NULL_SE <- NA
+res$NULL_SE <- as.numeric(res$NULL_SE)
 
 res$SES <- (res$Raw - res$NULL_MEAN)/res$NULL_SD
 str(res)
@@ -338,7 +310,7 @@ res$Metric <- "Trait Diversity"
 
 # Save results as csv
 # set filename
-filename <- paste0("patch_", space,  "_SES_", "nsims", n_sims, "_", metric, "_", sex, "_", iucn_type, "-iucn", ".csv")
+filename <- paste0(clade, "_patch_", space,  "_SES_", "nsims", n_sims, "_", metric, "_", sex, "_", iucn_type, "-iucn", ".csv")
 write.csv(
   res, 
   here::here(
@@ -351,7 +323,7 @@ write.csv(
 # Plot results ----
 
 # clear environment (except chosen variables)
-rm(list=setdiff(ls(), c("space", "metric", "n_sims", "iucn_type")))
+rm(list=setdiff(ls(), c("clade", "space", "metric", "n_sims", "iucn_type")))
 
 # load in results and get species richness as a proportion
 # create dataframe to populate
@@ -359,7 +331,7 @@ res <- data.frame(matrix(NA, nrow = 0, ncol = 9))
 colnames(res) <- c("IUCN", "SR", "Raw", "NULL_MEAN", "NULL_SD", "NULL_SE", "SES", "Metric", "SR_prop")
 for (sex in c("M", "F", "All")){
   # set file path
-  filename <- paste0("patch_", space,  "_SES_", "nsims", n_sims, "_", metric, "_", sex, "_", iucn_type, "-iucn", ".csv")
+  filename <- paste0(clade, "_patch_", space,  "_SES_", "nsims", n_sims, "_", metric, "_", sex, "_", iucn_type, "-iucn", ".csv")
   # load file and calculate proportional species richness
   temp_res <- read.csv(
     here::here(
@@ -379,7 +351,8 @@ res$IUCN <- as.factor(res$IUCN)
 levels(res$IUCN) <- c("All Species Retained", "CR Lost", "EN Lost", "VU Lost", "NT Lost (LC Only Retained)")
 
 # plot (subset by sex if required)
-res %>% 
+# note that there's no point in adding error bars because the error's so small you can't see it
+p <- res %>% 
   # filter(
   #   sex != "All"
   # ) %>%
@@ -387,6 +360,7 @@ res %>%
     aes(x = sr_prop, y = SES, colour = IUCN)
     ) + 
   geom_point() + 
+#  geom_errorbar(aes(ymin = SES - NULL_SE, ymax = SES + NULL_SE), width=0.005) +
   scale_x_reverse() + 
   xlab("Remaining species richness") + ylab("Standard Effect Size") +
   geom_hline(yintercept = 0, linetype = "dashed") + 
@@ -394,4 +368,20 @@ res %>%
   theme_light() + 
   facet_wrap(~ sex, ncol = 1) + 
   ggtitle(space)
+
+p
+
+# Save as png
+png_filename <- paste0(clade, "_patch_", space,  "_SES_", "nsims", n_sims, "_", metric, "_", iucn_type, "-iucn", ".png")
+png(
+  here::here(
+    "2_Patches", "4_OutputPlots", "2_Diversity_measures", "1_Diversity_extinction_risk", 
+    png_filename
+  ),
+  width = 1000, height = 1200, res = 150
+)
+p
+dev.off()
+
+
 
