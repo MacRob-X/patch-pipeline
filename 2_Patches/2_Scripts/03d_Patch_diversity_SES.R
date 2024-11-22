@@ -9,6 +9,7 @@
 library(dplyr)
 library(dispRity)
 library(ggplot2)
+library(parallel)
 
 
 # clear environment
@@ -27,7 +28,7 @@ source(
 # (from 240603 to 240806)
 space <- "usml"
 # select sex ("M", "F", "All")
-sex <- "All"
+sex <- "F"
 # select metric ("centr-dist", "nn-k", "nn-count")
 # note that nn-k is EXTREMELY slow to run - needs parallelisation (but will probably still
 # be too slow to run)
@@ -41,7 +42,7 @@ n_sims <- 1000
 # are assigned the lowest threat level of the multiple species
 # "nominate" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
 # are assigned the threat level of the BL species that corresponds to the nominate subspecies
-iucn_type <- "nominate"
+iucn_type <- "conservative"
 ## END EDITABLE CODE ##
 
 # Load data ----
@@ -157,17 +158,36 @@ trait_vec <- matrix(traits[noCR,], ncol=dim(traits)[2])
 res[2,2] <- length(noCR)
 res[2,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
 
-for (j in 1:ncol(sims)) {
-  
-  cat("\r", j, "of", ncol(sims))
-  
-  coms <- sample(x = all, size = length(noCR), replace = FALSE)
-  trait_vec <- matrix(traits[coms,], ncol=dim(traits)[2])
-  
-  sims[1,j] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
-  
-}
+# Use parLapply to replace the for loop with a parallelised apply function for speed
 
+# Set up a cluster using the number of cores (2 less than total number of laptop cores)
+no_cores <- parallel::detectCores() - 2
+cl <- parallel::makeCluster(no_cores)
+
+# export necessary objects to the cluster
+parallel::clusterExport(cl, c("all", "noCR", "traits", "metric_get", "dispRity", metric_get))
+
+sims[1, ] <- unlist(
+  parallel::parLapply(
+    cl = cl,
+    1:ncol(sims), 
+    function(j) {
+  
+      coms <- sample(x = all, size = length(noCR), replace = FALSE)
+      trait_vec <- matrix(traits[coms, ], ncol = dim(traits)[2])
+      
+      # Calculate the disparity value for the current simulation (column j)
+      disparity_value <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
+      
+      return(disparity_value)
+    }
+  )
+)
+
+# stop the cluster
+stopCluster(cl)
+
+# add results to table
 res[2,4] <- mean(sims)
 res[2,5] <- sd(sims)
 res[2,6] <- sd(sims)/sqrt(length(sims))
@@ -179,18 +199,36 @@ trait_vec <- matrix(traits[noEN,], ncol=dim(traits)[2])
 res[3,2] <- length(noEN)
 res[3,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
 
+# Use parLapply to replace the for loop with a parallelised apply function for speed
 
-for (j in 1:ncol(sims)) {
-  
-  cat("\r", j, "of", ncol(sims))
-  
-  coms <- sample(x = all, size = length(noEN), replace = FALSE)
-  trait_vec <- matrix(traits[coms,], ncol=dim(traits)[2])
-  
-  sims[1,j] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
-  
-}
+# Set up a cluster using the number of cores (2 less than total number of laptop cores)
+no_cores <- parallel::detectCores() - 2
+cl <- parallel::makeCluster(no_cores)
 
+# export necessary objects to the cluster
+parallel::clusterExport(cl, c("all", "noEN", "traits", "metric_get", "dispRity", metric_get))
+
+sims[1, ] <- unlist(
+  parallel::parLapply(
+    cl = cl,
+    1:ncol(sims), 
+    function(j) {
+      
+      coms <- sample(x = all, size = length(noEN), replace = FALSE)
+      trait_vec <- matrix(traits[coms, ], ncol = dim(traits)[2])
+      
+      # Calculate the disparity value for the current simulation (column j)
+      disparity_value <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
+      
+      return(disparity_value)
+    }
+  )
+)
+
+# stop the cluster
+stopCluster(cl)
+
+# add results to table
 res[3,4] <- mean(sims)
 res[3,5] <- sd(sims)
 res[3,6] <- sd(sims)/sqrt(length(sims))
@@ -202,16 +240,34 @@ trait_vec <- matrix(traits[noVU,], ncol=dim(traits)[2])
 res[4,2] <- length(noVU)
 res[4,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
 
-for (j in 1:ncol(sims)) {
-  
-  cat("\r", j, "of", ncol(sims))
-  
-  coms <- sample(x = all, size = length(noVU), replace = FALSE)
-  trait_vec <- matrix(traits[coms,], ncol=dim(traits)[2])
-  
-  sims[1,j] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
-  
-}
+# Use parLapply to replace the for loop with a parallelised apply function for speed
+
+# Set up a cluster using the number of cores (2 less than total number of laptop cores)
+no_cores <- parallel::detectCores() - 2
+cl <- parallel::makeCluster(no_cores)
+
+# export necessary objects to the cluster
+parallel::clusterExport(cl, c("all", "noVU", "traits", "metric_get", "dispRity", metric_get))
+
+sims[1, ] <- unlist(
+  parallel::parLapply(
+    cl = cl,
+    1:ncol(sims), 
+    function(j) {
+      
+      coms <- sample(x = all, size = length(noVU), replace = FALSE)
+      trait_vec <- matrix(traits[coms, ], ncol = dim(traits)[2])
+      
+      # Calculate the disparity value for the current simulation (column j)
+      disparity_value <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
+      
+      return(disparity_value)
+    }
+  )
+)
+
+# stop the cluster
+stopCluster(cl)
 
 res[4,4] <- mean(sims)
 res[4,5] <- sd(sims)
@@ -224,16 +280,34 @@ trait_vec <- matrix(traits[noNT,], ncol=dim(traits)[2])
 res[5,2] <- length(noNT)
 res[5,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
 
-for (j in 1:ncol(sims)) {
-  
-  cat("\r", j, "of", ncol(sims))
-  
-  coms <- sample(x = all, size = length(noNT), replace = FALSE)
-  trait_vec <- matrix(traits[coms,], ncol=dim(traits)[2])
-  
-  sims[1,j] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
-  
-}
+# Use parLapply to replace the for loop with a parallelised apply function for speed
+
+# Set up a cluster using the number of cores (2 less than total number of laptop cores)
+no_cores <- parallel::detectCores() - 2
+cl <- parallel::makeCluster(no_cores)
+
+# export necessary objects to the cluster
+parallel::clusterExport(cl, c("all", "noNT", "traits", "metric_get", "dispRity", metric_get))
+
+sims[1, ] <- unlist(
+  parallel::parLapply(
+    cl = cl,
+    1:ncol(sims), 
+    function(j) {
+      
+      coms <- sample(x = all, size = length(noNT), replace = FALSE)
+      trait_vec <- matrix(traits[coms, ], ncol = dim(traits)[2])
+      
+      # Calculate the disparity value for the current simulation (column j)
+      disparity_value <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
+      
+      return(disparity_value)
+    }
+  )
+)
+
+# stop the cluster
+stopCluster(cl)
 
 res[5,4] <- mean(sims)
 res[5,5] <- sd(sims)
@@ -264,7 +338,7 @@ res$Metric <- "Trait Diversity"
 
 # Save results as csv
 # set filename
-filename <- paste0("patch_", space,  "_SES_", "nsims", n_sims, "_", metric, "_", sex, ".csv")
+filename <- paste0("patch_", space,  "_SES_", "nsims", n_sims, "_", metric, "_", sex, "_", iucn_type, "-iucn", ".csv")
 write.csv(
   res, 
   here::here(
@@ -277,7 +351,7 @@ write.csv(
 # Plot results ----
 
 # clear environment (except chosen variables)
-rm(list=setdiff(ls(), c("space", "metric", "n_sims")))
+rm(list=setdiff(ls(), c("space", "metric", "n_sims", "iucn_type")))
 
 # load in results and get species richness as a proportion
 # create dataframe to populate
@@ -285,7 +359,7 @@ res <- data.frame(matrix(NA, nrow = 0, ncol = 9))
 colnames(res) <- c("IUCN", "SR", "Raw", "NULL_MEAN", "NULL_SD", "NULL_SE", "SES", "Metric", "SR_prop")
 for (sex in c("M", "F", "All")){
   # set file path
-  filename <- paste0("patch_", space,  "_SES_", "nsims", n_sims, "_", metric, "_", sex, ".csv")
+  filename <- paste0("patch_", space,  "_SES_", "nsims", n_sims, "_", metric, "_", sex, "_", iucn_type, "-iucn", ".csv")
   # load file and calculate proportional species richness
   temp_res <- read.csv(
     here::here(
