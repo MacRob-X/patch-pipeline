@@ -79,7 +79,7 @@ pam_raw <- readRDS(
 )
 
 
-## Analysis ----
+## Analysis - Calculate mean of metric for each grid cell ----
 
 # Set spatial parameters
 null_rast <- pam_raw[[2]]
@@ -171,6 +171,20 @@ sr_mask <- ifelse(species_richness >= sr_threshold, TRUE, NA)
 saveRDS(sr_mask,file = here::here(
   "2_Patches", "3_OutputData", "6_Spatial_mapping", pam_res, space,
   paste(clade, "species_richness_mask", sr_threshold, sep = "_")))
+# create raster of species richness
+sr_raster <- terra::rast(null_rast)
+species_richness[species_richness == 0] <- NA
+values(sr_raster) <- species_richness
+# save sr raster for later use
+sr_rast_filename <- paste("speciesrichness", clade, "patches", space, sex_match, pam_res, "Behrman", pam_type, pam_seas, "raster.tif", sep = ".")
+terra::writeRaster(
+  sr_raster,
+  filename = here::here(
+    "2_Patches", "3_OutputData", "6_Spatial_mapping", pam_res, space,
+    sr_rast_filename
+  )
+)
+
 
 for(sex in sexes){
   
@@ -223,43 +237,45 @@ if(sex_match == "matchedsex"){
   names(mean_ctrd_dist_rast) <-  c(paste0("M_", metric), paste0("F_", metric), paste0("U_", metric))
 }
 
-# explicitly set the CRS to Behrmann Equal Area (Cylindrical Equal Area with a 
-# specific latitude of true scale set at 30°)
-# Use Well Known Text (WKT) obtained from https://spatialreference.org/ref/esri/54017/
-terra::crs(mean_ctrd_dist_rast) <- 'PROJCRS["World_Behrmann",
-    BASEGEOGCRS["WGS 84",
-        DATUM["World Geodetic System 1984",
-            ELLIPSOID["WGS 84",6378137,298.257223563,
-                LENGTHUNIT["metre",1]]],
-        PRIMEM["Greenwich",0,
-            ANGLEUNIT["Degree",0.0174532925199433]]],
-    CONVERSION["World_Behrmann",
-        METHOD["Lambert Cylindrical Equal Area",
-            ID["EPSG",9835]],
-        PARAMETER["Latitude of 1st standard parallel",30,
-            ANGLEUNIT["Degree",0.0174532925199433],
-            ID["EPSG",8823]],
-        PARAMETER["Longitude of natural origin",0,
-            ANGLEUNIT["Degree",0.0174532925199433],
-            ID["EPSG",8802]],
-        PARAMETER["False easting",0,
-            LENGTHUNIT["metre",1],
-            ID["EPSG",8806]],
-        PARAMETER["False northing",0,
-            LENGTHUNIT["metre",1],
-            ID["EPSG",8807]]],
-    CS[Cartesian,2],
-        AXIS["(E)",east,
-            ORDER[1],
-            LENGTHUNIT["metre",1]],
-        AXIS["(N)",north,
-            ORDER[2],
-            LENGTHUNIT["metre",1]],
-    USAGE[
-        SCOPE["Not known."],
-        AREA["World."],
-        BBOX[-90,-180,90,180]],
-    ID["ESRI",54017]]'
+## NOT RUN - the below code is unnecessary and it changes the LENGTHUNIT parameter to metres
+## even though it should be in km
+# # explicitly set the CRS to Behrmann Equal Area (Cylindrical Equal Area with a 
+# # specific latitude of true scale set at 30°)
+# # Use Well Known Text (WKT) obtained from https://spatialreference.org/ref/esri/54017/
+# terra::crs(mean_ctrd_dist_rast) <- 'PROJCRS["World_Behrmann",
+#     BASEGEOGCRS["WGS 84",
+#         DATUM["World Geodetic System 1984",
+#             ELLIPSOID["WGS 84",6378137,298.257223563,
+#                 LENGTHUNIT["metre",1]]],
+#         PRIMEM["Greenwich",0,
+#             ANGLEUNIT["Degree",0.0174532925199433]]],
+#     CONVERSION["World_Behrmann",
+#         METHOD["Lambert Cylindrical Equal Area",
+#             ID["EPSG",9835]],
+#         PARAMETER["Latitude of 1st standard parallel",30,
+#             ANGLEUNIT["Degree",0.0174532925199433],
+#             ID["EPSG",8823]],
+#         PARAMETER["Longitude of natural origin",0,
+#             ANGLEUNIT["Degree",0.0174532925199433],
+#             ID["EPSG",8802]],
+#         PARAMETER["False easting",0,
+#             LENGTHUNIT["metre",1],
+#             ID["EPSG",8806]],
+#         PARAMETER["False northing",0,
+#             LENGTHUNIT["metre",1],
+#             ID["EPSG",8807]]],
+#     CS[Cartesian,2],
+#         AXIS["(E)",east,
+#             ORDER[1],
+#             LENGTHUNIT["metre",1]],
+#         AXIS["(N)",north,
+#             ORDER[2],
+#             LENGTHUNIT["metre",1]],
+#     USAGE[
+#         SCOPE["Not known."],
+#         AREA["World."],
+#         BBOX[-90,-180,90,180]],
+#     ID["ESRI",54017]]'
 
 # save the raster (version without SR threshold applied)
 rast_filename <- paste(clade, "patches", space, sex_match, metric, pam_res, "Behrman", pam_type, pam_seas, "raster.tif", sep = ".")
@@ -287,6 +303,15 @@ div_raster <- terra::rast(
   )
 )
 
+# load species richness raster
+sr_rast_filename <- paste("speciesrichness", clade, "patches", space, sex_match, pam_res, "Behrman", pam_type, pam_seas, "raster.tif", sep = ".")
+sr_raster <- terra::rast(
+  here::here(
+    "2_Patches", "3_OutputData", "6_Spatial_mapping", pam_res, space,
+    sr_rast_filename
+  )
+)
+
 # get world map (for plotting)
 world <- rnaturalearth::ne_countries(returnclass = "sf")
 world <- sf::st_transform(world, crs = terra::crs(div_raster))
@@ -302,6 +327,8 @@ sr_mask <- readRDS(
 # apply richness threshold to raster
 sr_lim_div_raster <- terra::rast(div_raster)
 terra::values(sr_lim_div_raster) <- terra::values(div_raster) * sr_mask
+
+## GGPLOT VERSION
 
 # generate quantiles for colour scale plotting purposes
 # first examine the histograms
@@ -320,7 +347,7 @@ names(quants) <- round(quants, digits = 1)
 
 
 ## Plot with continuous or binned scale?
-col_scale <- "binned"
+col_scale <- "continuous"
 
 # plot the raster
 p <- ggplot() + 
@@ -354,53 +381,176 @@ p
 dev.off()
 
 
-# Base R version (for binned with rainbow colour scale)
+## Base R version (for binned with rainbow colour scale)
 
-## Use viridis turbo palette or custom colour palette?
-palette_choice <- "custom"
+## EDITABLE CODE
+## plot species richness?
+plot_sr <- TRUE
+## Choose font "default" or name font (e.g. "Century Gothic", "Avenir")
+## Use extrafont::fonts() to see available fonts
+font_par <- "Avenir"
+font_path <- "C:/Windows/Fonts/AvenirNextLTPro-Regular.ttf"
+## Use viridis_c, viridis turbo palette or custom colour palette?
+palette_choice <- "viridis"
+
+# Add the custom font by specifying its path or name
+sysfonts::font_add(family = font_par, regular = font_path)
+
+# get spatvector version of world map for plotting purposes (with terra::plot)
+world_vec <- terra::vect(world)
+# create copy of div_raster with same extent as world_vec
+# FOR PLOTTING PURPOSES ONLY
+ext_match_div_raster <- sr_lim_div_raster
+terra::ext(ext_match_div_raster) <- terra::ext(world_vec)
+# same for species richness raster
+ext_match_sr_raster <- sr_raster
+terra::ext(ext_match_sr_raster) <- terra::ext(world_vec)
 
 # get unified range
 minval <- min(terra::values(sr_lim_div_raster), na.rm = TRUE)
 maxval <- max(terra::values(sr_lim_div_raster), na.rm = TRUE)
-nquants <- 15
+nquants <- 12
 quants <- quantile(terra::values(sr_lim_div_raster), na.rm = TRUE, probs = seq(0, 1, by = 1/nquants))
+sr_quants <- quantile(terra::values(sr_raster), na.rm = TRUE, probs = seq(0, 1, by = 1/(nquants)))
 
-if(palette_choice == "turbo"){
+if(palette_choice == "viridis"){
+  colpal <- viridisLite::viridis(nquants)
+} else if(palette_choice == "turbo"){
   colpal <- viridisLite::turbo(nquants)
 } else if(palette_choice == "custom"){
   # create own colour palette (based on Cooney et al (2022) Fig. 2)
   cols <- c("#3e9eb5ff", "#eacc2cff", "#f82202ff")
   colpal <- colorRampPalette(cols)(nquants)
 }
+palname <- paste0("binned", palette_choice)
 
 
 # plot
-png_filename <- paste(clade, "patches", space, sex_match, metric, "sr_thresh", sr_threshold, pam_res, "binnedturbo", "colscale", "Behrman", pam_type, pam_seas, "png", sep = ".")
-png(
-  here::here(
-    "2_Patches", "4_OutputPlots", "3_Spatial_mapping", pam_res, space,
-    png_filename
-  ), 
-  width = 420, height = 320, units = "mm", pointsize = 24, res = 100
-)
-par(mfrow = c(2, 1))
+png_filename <- paste(clade, "patches", space, sex_match, metric, "sr_thresh", sr_threshold, pam_res, palname, "colscale", "Behrman", pam_type, pam_seas, "png", sep = ".")
+if(plot_sr == TRUE){
+    png(
+    here::here(
+      "2_Patches", "4_OutputPlots", "3_Spatial_mapping", pam_res, space,
+      png_filename
+    ), 
+    width = 320, height = 400, units = "mm", pointsize = 24, res = 100,
+   # family = font_par
+   ## NOTE that I haven't sorted the custom font size out for this plot yet - currently
+   ## using Avenir makes the font massive
+  )
+  par(mfrow = c(3, 1))
+  cexval <- 1.1
+  } else if(plot_sr == FALSE){
+    png(
+      here::here(
+        "2_Patches", "4_OutputPlots", "3_Spatial_mapping", pam_res, space,
+        png_filename
+      ), 
+      width = 420, height = 300, units = "mm", pointsize = 24, res = 100,
+      family = font_par
+    )
+    par(mfrow = c(2, 1))
+    # set font size
+    cexval <- 0.7
+    # use custom font
+    showtext::showtext_begin()
+  }
+
+# first plot male diversity raster to get legend
 terra::plot(
-  sr_lim_div_raster, "M_centr-dist", 
+  ext_match_div_raster, "M_centr-dist", 
   breaks = quants, 
   col = colpal, 
-  colNA = "grey",
+ #  colNA = "grey",
   legend = TRUE,
-  plg = list(title = "Mean distance \n to centroid"),
-  mar = c(2, 2, 2, 8)
-  )
+  frame = FALSE,
+  axes = FALSE, 
+  plg = list(title = "Mean distance\nto centroid (males)", x = "left", cex = cexval),
+  mar = c(1, 2, 1, 2)
+)
+# overlay grey world map so that NA parts of world are grey
 terra::plot(
-  sr_lim_div_raster, "F_centr-dist", 
+  world_vec, 
+  col="grey80", 
+  border = NA, 
+  add = TRUE,
+  axes = "n"
+  )
+# overlay male diversity raster again, but without legend
+terra::plot(
+  ext_match_div_raster, "M_centr-dist", 
   breaks = quants, 
   col = colpal, 
-  colNA = "grey",
+ # colNA = "grey",
+  add = TRUE,
   legend = FALSE,
-  mar = c(2, 2, 2, 8)
+  plg = list(title = "Mean distance\nto centroid"),
+  mar = c(1, 2, 1, 2)
   )
+# plot female diversity raster (in separate plot)
+# 
+terra::plot(
+  ext_match_div_raster, "F_centr-dist", 
+  breaks = quants, 
+  col = colpal, 
+  # colNA = "grey",
+  legend = TRUE,
+  plg = list(title = "Mean distance\nto centroid (females)", x = "left", cex = cexval),
+  mar = c(1, 2, 1, 2),
+  axes = "n"
+  # add = TRUE
+)
+# then overlay grey world a second time
+terra::plot(
+  world_vec, 
+  col="grey80", 
+  border = NA, 
+  axes = "n",
+  add = TRUE
+)
+# overlay female diversity raster again
+# need to do it this way to get axes to match male map
+terra::plot(
+  ext_match_div_raster, "F_centr-dist", 
+  breaks = quants, 
+  col = colpal, 
+ # colNA = "grey",
+  legend = FALSE,
+  mar = c(1, 2, 1, 2),
+  add = TRUE
+  )
+# plot species richness (in a separate plot)
+if(plot_sr == TRUE){
+  terra::plot(
+    ext_match_sr_raster,
+    breaks = sr_quants,
+    col = colpal,
+    mar = c(1, 2, 1, 2),
+    legend = TRUE,
+    frame = FALSE,
+    axes = FALSE,
+    plg = list(title = "Species richness", x = "left", cex = cexval)
+  )
+  # overlay grey world
+  terra::plot(
+    world_vec, 
+    col="grey80", 
+    border = NA, 
+    axes = "n",
+    add = TRUE
+  )
+  # overlay species richness again
+  terra::plot(
+    ext_match_sr_raster,
+    breaks = sr_quants,
+    #  col = colpal,
+    mar = c(1, 2, 1, 2),
+    legend = FALSE,
+    add = TRUE,
+  )
+  # end custom font
+  showtext::showtext_end()
+}
 dev.off() 
 
 # other (non-working) colour scale options
@@ -439,7 +589,7 @@ ggplot() +
 # Downstream analysis ----
 
 # read in raster
-rast_filename <- paste(clade, "patches", space, metric, pam_res, "Behrman", pam_type, pam_seas, "raster.tif", sep = ".")
+rast_filename <- paste(clade, "patches", space, sex_match, metric, pam_res, "Behrman", pam_type, pam_seas, "raster.tif", sep = ".")
 div_raster <- terra::rast(
   here::here(
     "2_Patches", "3_OutputData", "6_Spatial_mapping", pam_res, space,
@@ -448,14 +598,53 @@ div_raster <- terra::rast(
 )
 
 # get CRS
-crs <- div_raster %>% 
+cea_crs <- div_raster %>% 
   raster::crs() %>% 
   as.character()
 
 # read in Dinerstein et al 2017 ecoregion shape files
-sf::st_read(
+ecoregions <- sf::st_read(
   here::here(
     "4_SharedInputData", "Ecoregions2017_accessed2024-10-07",
     "Ecoregions2017.shp"
   )
 )
+
+# convert to Behrman CEA CRS
+ecoregions <- sf::st_transform(ecoregions, crs = sf::st_crs(div_raster))
+
+# plot to inspect
+# ecoregions only
+ggplot() + 
+  geom_sf(data = ecoregions)
+# frst 20 ecoregions overlaid on diversity raster (to check extents, crs etc match)
+ggplot() + 
+  geom_spatraster(data = div_raster) + 
+  geom_sf(data = ecoregions[1:20, ]) + 
+  facet_wrap(~ lyr, ncol = 1) + 
+  coord_sf(expand = FALSE)
+
+# add column to ecoregions object to populate with mean and median values of
+# diversity metric
+tmp_vect <- vector("numeric", length = nrow(ecoregions))
+ecoregions <- cbind(ecoregions, tmp_vect)
+colnames(ecoregions) <- gsub(
+  pattern = "tmp_vect", 
+  replacement = paste("mean", (sub("-", "_", metric)), sep = "_"), 
+  x = colnames(ecoregions)
+  )
+
+# loop to subset raster to each ecoregion polygon
+for(i in nrow(ecoregions)){
+  
+  # get eccoregion of interest
+  ecoreg_i <- ecoregions[i, ]
+  
+  # crop diversity raster to extent of ecoregion polygon, then mask to outline of polygon
+  div_rast_ecoreg <- div_raster %>% 
+    terra::crop(ecoreg_i) %>% 
+    terra::mask(ecoreg_i)
+  
+  #
+  
+}
