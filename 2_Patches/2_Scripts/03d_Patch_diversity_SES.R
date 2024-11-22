@@ -1,22 +1,36 @@
+# Calculate Standard Effect Size (SES) of change in diversity metric as species at 
+# different IUCN threat levels are sequentially lost
+# Robert MacDonald
+# Edited 29/08/2024
 
+# Note: this code is very heavily based on code from Hughes et al. (2022) Curr Biol
 
 # attach libraries
 library(dplyr)
 library(dispRity)
 library(ggplot2)
 
+
 # clear environment
 rm(list=ls())
 
+# custom dispRity metrics
+source(
+  here::here(
+    "3_SharedScripts", "2_BetaVersions", "dispRity_metric_functions.R"
+  )
+)
 
 ## EDITABLE CODE ##
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr", "lab")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
-space <- "usmldbl"
+space <- "jndxyzlum"
 # select sex ("M", "F", "All")
 sex <- "All"
-# select metric ("centr-dist", "nn-k")
+# select metric ("centr-dist", "nn-k", "nn-count")
+# note that nn-k is EXTREMELY slow to run - needs parallelisation (but will probably still
+# be too slow to run)
 metric <- "centr-dist"
 # select number of null distributions to generate
 n_sims <- 1000
@@ -29,7 +43,7 @@ n_sims <- 1000
 pca_all <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
-    paste0("Neoaves.patches.231030.PCAcolspaces.", space, ".240806.rds")
+    paste0("Neoaves.patches.231030.PCAcolspaces.", space, ".240829.rds")
   )
 )
 
@@ -110,20 +124,29 @@ res <- matrix(NA, nrow=5, ncol = 6)
 a <- n_sims #change depending on number of simulations  
 sims <- matrix(NA, nrow=1, ncol = a) #place to store simulations for SES
 
+# set dispRity metric
+if(metric == "centr-dist"){
+  metric_get <- "centroids"
+} else if (metric == "nn-k"){
+  metric_get <- "mean.nn.dist"
+}else if (metric == "nn-count"){
+  metric_get <- "count.neighbours"
+}
+
 
 all <- rownames(species)
 # extract traits for species in the random community
 trait_vec <- matrix(traits[all,], ncol=dim(traits)[2])
 # calculate SR & Mean distance to centroid
 res[1,2] <- length(all)
-res[1,3] <- mean(dispRity(trait_vec, metric = centroids)$disparity[[1]][[1]])
+res[1,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
 
 noCR <- rownames(species)[species$category != "CR"]
 # extract traits for species in the random community
 trait_vec <- matrix(traits[noCR,], ncol=dim(traits)[2])
 # calculate SR & Mean distance to centroid
 res[2,2] <- length(noCR)
-res[2,3] <- mean(dispRity(trait_vec, metric= centroids)$disparity[[1]][[1]])
+res[2,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
 
 for (j in 1:ncol(sims)) {
   
@@ -132,7 +155,7 @@ for (j in 1:ncol(sims)) {
   coms <- sample(x = all, size = length(noCR), replace = FALSE)
   trait_vec <- matrix(traits[coms,], ncol=dim(traits)[2])
   
-  sims[1,j] <- mean(dispRity(trait_vec, metric= centroids)$disparity[[1]][[1]])
+  sims[1,j] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
   
 }
 
@@ -145,7 +168,7 @@ noEN <- rownames(species)[species$category != "CR" & species$category != "EN"]
 trait_vec <- matrix(traits[noEN,], ncol=dim(traits)[2])
 # calculate SR & Mean distance to centroid
 res[3,2] <- length(noEN)
-res[3,3] <- mean(dispRity(trait_vec, metric= centroids)$disparity[[1]][[1]])
+res[3,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
 
 
 for (j in 1:ncol(sims)) {
@@ -155,7 +178,7 @@ for (j in 1:ncol(sims)) {
   coms <- sample(x = all, size = length(noEN), replace = FALSE)
   trait_vec <- matrix(traits[coms,], ncol=dim(traits)[2])
   
-  sims[1,j] <- mean(dispRity(trait_vec, metric= centroids)$disparity[[1]][[1]])
+  sims[1,j] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
   
 }
 
@@ -168,7 +191,7 @@ noVU <- rownames(species)[species$category != "CR" & species$category != "EN" & 
 trait_vec <- matrix(traits[noVU,], ncol=dim(traits)[2])
 # calculate SR & Mean distance to centroid
 res[4,2] <- length(noVU)
-res[4,3] <- mean(dispRity(trait_vec, metric= centroids)$disparity[[1]][[1]])
+res[4,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
 
 for (j in 1:ncol(sims)) {
   
@@ -177,7 +200,7 @@ for (j in 1:ncol(sims)) {
   coms <- sample(x = all, size = length(noVU), replace = FALSE)
   trait_vec <- matrix(traits[coms,], ncol=dim(traits)[2])
   
-  sims[1,j] <- mean(dispRity(trait_vec, metric= centroids)$disparity[[1]][[1]])
+  sims[1,j] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
   
 }
 
@@ -190,7 +213,7 @@ noNT <- rownames(species)[species$category != "CR" & species$category != "EN" & 
 trait_vec <- matrix(traits[noNT,], ncol=dim(traits)[2])
 # calculate SR & Mean distance to centroid
 res[5,2] <- length(noNT)
-res[5,3] <- mean(dispRity(trait_vec, metric= centroids)$disparity[[1]][[1]])
+res[5,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
 
 for (j in 1:ncol(sims)) {
   
@@ -199,7 +222,7 @@ for (j in 1:ncol(sims)) {
   coms <- sample(x = all, size = length(noNT), replace = FALSE)
   trait_vec <- matrix(traits[coms,], ncol=dim(traits)[2])
   
-  sims[1,j] <- mean(dispRity(trait_vec, metric= centroids)$disparity[[1]][[1]])
+  sims[1,j] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
   
 }
 
