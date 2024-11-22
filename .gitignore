@@ -37,3 +37,24 @@ vignettes/*.pdf
 
 # .gitignore file
 .gitignore
+
+# Patch data and outputs
+# Input data folder
+/2_Patches/1_InputData/
+# Output data folder
+/2_Patches/3_OutputData/
+# Output plots folder
+/2_Patches/4_OutputPlots/
+
+# Torpedo data and outputs
+# Input data folder
+/1_Torpedoes/1_InputData/
+# Output data folder
+/1_Torpedoes/3_OutputData/
+# Output plots folder
+/1_Torpedoes/4_OutputPlots/
+# Output pngs folder
+/1_Torpedoes/4_OutputPNGs/
+
+# Shared input data folder
+/4_SharedInputData
