@@ -9,26 +9,13 @@ rm(list=ls())
 library(umap)
 
 # Custom functions ----
-source(
-  here::here(
-    "2_Patches", "2_Scripts", "2_BetaVersions", "Patch_Plotting_functions_v1.r"
-  )
-)
+source("./Scripts/Plotting_functions_v3.r")
 
 # load patch PCA data
-pca_all <- readr::read_rds(
-  here::here(
-    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA", 
-    "Neoaves.patches.231030.PCAcolspaces.jndxyzlumr.240603.rds"
-  )
-)
+pcaAll <- readRDS("./Outputs/features/patches/PCA/Neoaves.patches.pca.jndxyzlumr.rds")
 
 # load taxonomic data
-taxo <- readr::read_csv(
-  here::here(
-    "4_SharedInputData", "BLIOCPhyloMasterTax_2019_10_28.csv"
-   )
-)
+taxo <- read.csv("./Data/BLIOCPhyloMasterTax_2019_10_28.csv")
 
 
 #-------------------------------------------------------------------------------------------------#
@@ -41,15 +28,10 @@ rawUMAPs <- vector("list", length = nUMAPs)
 # perform UMAPs
 for (i in 1:nUMAPs){
   cat("\r", i)
-  rawUMAPs[[i]] <- umap(pca_all$x)
+  rawUMAPs[[i]] <- umap(pcaAll$x)
 }
 
-saveRDS(rawUMAPs, 
-        file = here::here(
-          "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP", 
-          "Neoaves.patches.pca.jndxyzlumr.UMAPs.iterations.240603.rds"
-          )
-        )
+saveRDS(rawUMAPs, file = "./Outputs/features/patches/PCA/Neoaves.patches.pca.jndxyzlumr.UMAPs.iterations.240326.rds")
 
 # Trim and order taxonomic data to match UMAP data
 
@@ -115,23 +97,13 @@ plot.FourPatch(cleanUMAPs[[1]],
                cleanUMAPs[[3]],
                cleanUMAPs[[4]],
                taxonCol = TRUE,
-               filepath = here::here(
-                 "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", "umap_iterations",
-                 "Neoaves.patches.pca.jndxyzlumr.UMAPiterations.240603.png"
-                 )
-               )
-
-# check if identical
-identical(cleanUMAPs[[1]], cleanUMAPs[[2]])
-identical(cleanUMAPs[[2]], cleanUMAPs[[3]])
-identical(cleanUMAPs[[3]], cleanUMAPs[[4]])
+               filepath = "./Plots/featurespaces/patches/UMAP_iterations/Neoaves.patches.pca.jndxyzlumr.UMAPiterations.png")
 
 #--------------------------------------------------------------------------------#
 # Perform UMAP 8 times with different parameters to visually check if clustering is affected
 
 # set n_neighbours (based on Alam et al., 2024, Nature)
 # default is 15
-# note that runs with nn > 100 take a long time to run ( ~30 mins for nn = 200)
 customConfig <- umap.defaults
 nn <- c(5, 50, 200, 1000)
 nnUMAPs <- vector("list", length = length(nn))
@@ -139,15 +111,10 @@ for (i in 1:length(nn)){
   cat("\r", i)
   # set custom configuration
   customConfig$n_neighbors <- nn[i]
-  nnUMAPs[[i]] <- umap(pca_all$x, config = customConfig)
+  nnUMAPs[[i]] <- umap(pcaAll$x, config = customConfig)
 }
 
-saveRDS(nnUMAPs, 
-        file = here::here(
-          "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP", 
-          "Neoaves.patches.pca.jndxyzlumr.nnUMAPs.240603.rds"
-        )
-      )
+saveRDS(nnUMAPS, file = "./Outputs/features/patches/PCA/Neoaves.patches.pca.jndxyzlumr.nnUMAPs.240326.rds")
 
 # create list of dataframes from UMAPs
 nncleanUMAPs <- lapply(nnUMAPs, function(df){
@@ -164,11 +131,7 @@ plot.FourPatch(nncleanUMAPs[[1]],
                nncleanUMAPs[[3]],
                nncleanUMAPs[[4]],
                taxonCol = T,
-               filepath = here::here(
-                 "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", "umap_iterations",
-                 "Neoaves.patches.pca.jndxyzlumr.nnUMAPs.5.50.200.1000.240603.png"
-               )
-)
+               filepath = "./Plots/featurespaces/patches/UMAP_iterations/Neoaves.patches.pca.jndxyzlumr.nnUMAPs.5.50.200.1000.png")
 
 
 # set minimum distance (again based on Alam et al., 2024, Nature)
@@ -180,15 +143,10 @@ for (i in 1:length(minDist)){
   cat("\r", i)
   # set custom configuration
   customConfig$min_dist <- minDist[i]
-  minDistUMAPs[[i]] <- umap(pca_all$x, config = customConfig)
+  minDistUMAPs[[i]] <- umap(pcaAll$x, config = customConfig)
 }
 
-saveRDS(minDistUMAPs, 
-        file = here::here(
-          "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP", 
-          "Neoaves.patches.pca.jndxyzlumr.minDistUMAPs.240604.rds"
-        )
-      )
+saveRDS(minDistUMAPs, file = "./Outputs/features/patches/PCA/Neoaves.patches.pca.jndxyzlumr.minDistUMAPs.240327.rds")
 
 # create list of dataframes from UMAPs
 mindistcleanUMAPs <- lapply(minDistUMAPs, function(df){
@@ -204,11 +162,7 @@ plot.FourPatch(mindistcleanUMAPs[[1]],
                mindistcleanUMAPs[[3]],
                mindistcleanUMAPs[[4]],
                taxonCol = T,
-               filepath = here::here(
-                 "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", "umap_iterations",
-                 "Neoaves.patches.pca.jndxyzlumr.minDistUMAPs.1.25.50.99.240603.png"
-               )
-              )
+               filepath = "./Plots/featurespaces/patches/UMAP_iterations/Neoaves.patches.pca.jndxyzlumr.minDistUMAPs.1.25.50.99.png")
 
 
 # function to spot check species in certain ranges
@@ -280,27 +234,4 @@ plot(nncleanUMAPs[[1]][,2] ~ nncleanUMAPs[[1]][,1],
      xlab = "UMAP 1", ylab = "UMAP 2", 
      las = 1,
      col = col_mapping); box(lwd=2); title("UMAP of JND xyzlumr colour space. n_neighbour = 5; min dist = 0.1")
-
-
-#---------------------------------------------------------------------------------------------------------------#
-## Perform t-SNE once to obtain basic t-SNE visualisation
-## parameters all set to default other than epoch (which controls verbosity, not actual t-SNE parameters)
-tsne_base <- tsne::tsne(pca_all$x, 
-                        k = 2, 
-                        perplexity = 30,
-                        max_iter = 1000,
-                        epoch = 50)
-
-## Perform t-SNE four times with the default parameters to see if clustering is visually different
-## Plot and save as png
-
-# set number of iterations
-n_tsne <- 4
-raw_tsnes <- vector("list", length = n_tsne)
-
-# perform t_SNEs
-for (i in 1:n_tsne){
-  cat("\r", i)
-  raw_tsnes[[i]] <- tsne::tsne(pca_all$x)
-}
                     
