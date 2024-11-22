@@ -2,6 +2,8 @@
 # Robert MacDonald
 # 29/08/2024
 
+# Code to run each time -----------------------
+
 # load libraries
 library(dplyr)
 
@@ -64,6 +66,11 @@ patch_data <- patch_master %>%
 
 # extract patch species names
 patch_names <- unique(patch_data$species)
+
+# End code to run each time -------------------------------------------
+
+
+# Code to run once (to generate datasets to use for matching) --------------------------------
 
 # remove gallanseriformes and palaeognaths from taxonomy data
 taxo_data <- taxo_master %>% 
@@ -290,9 +297,11 @@ write.csv(
   )
 )
 
+# End code to run once only -----------------------------------------------------------
 
 # ---------------------------------------------------------------------------------------#
-# ATTEMPT 2 - Using AVONET taxonomy matcher ----
+# Code to run each time :
+# Using AVONET taxonomy matcher ----
 # Downloaded from AVONET supplementary data repository
 # https://figshare.com/s/b990722d72a26b5bfead
 
@@ -763,7 +772,7 @@ avonet_iucn %>%
 # will probably 'artificially' increase the threat category due to smaller range size
 
 #-------# 
-# INSERT CODE HERE TO DEAL WITH THE REMAINING many_bl_to_1_bt" SPECIES
+# DEAL WITH THE REMAINING many_bl_to_1_bt" SPECIES
 
 # CONSERVATIVE APPROACH - assign the least threatened category for each of these many_bl_to_1_bt species
 
