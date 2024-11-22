@@ -8,13 +8,28 @@ library(ggplot2)
 # clear environment
 rm(list=ls())
 
+
+## EDITABLE CODE ##
+# select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr", "lab")
+# N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
+# (from 240603 to 240806)
+space <- "usmldbl"
+# select sex ("M", "F", "All")
+sex <- "All"
+# select metric ("centr-dist", "nn-k")
+metric <- "centr-dist"
+# select number of null distributions to generate
+n_sims <- 1000
+## END EDITABLE CODE ##
+
 # Load data ----
 
 # load patch data (PCA of whichever colourspace - generated in 02_Patch_Analyse_features.R)
+
 pca_all <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
-    "Neoaves.patches.231030.PCAcolspaces.jndxyzlum.240603.rds"
+    paste0("Neoaves.patches.231030.PCAcolspaces.", space, ".240806.rds")
   )
 )
 
@@ -32,16 +47,7 @@ iucn <- readr::read_rds(
 ## NB: To generate Table S1, the code below can be ran on individual PCs.
 ## E.g. traits <- trait[,1]
 
-## EDITABLE CODE ##
-# select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr", "cielab")
-space <- "cielab"
-# select sex ("M", "F", "All")
-sex <- "All"
-# select metric ("centr-dist", "nn-k")
-metric <- "centr-dist"
-# select number of null distributions to generate
-n_sims <- 10000
-## END EDITABLE CODE ##
+
 
 # Matrix containing PCs:
 trait <- pca_all %>% 
@@ -93,9 +99,9 @@ if(sex != "All"){
 }
 
 
-# 40 PCs account for 100% variation in traits
-### 40 PCs
-traits <- as.matrix(trait[,1:40])
+# Use all PCS to account for 100% variation in traits
+### All PCs
+traits <- as.matrix(trait[,1:(ncol(trait) - 2)])
 head(traits)
 
 ### OUTPUT DATA FRAME
@@ -239,22 +245,28 @@ write.csv(
 # Plot results ----
 
 # clear environment (except chosen variables)
-rm(list=setdiff(ls(), c("sex", "metric", "a")))
+rm(list=setdiff(ls(), c("space", "metric", "n_sims")))
 
 # load in results and get species richness as a proportion
-filename <- paste0("patch_SES_", "nsims", a, "_", metric, "_", sex, ".csv")
-All_res <- read.csv(
-  here::here(
-  "2_Patches", "3_OutputData", "4_Diversity_measures", filename
-  )
-) %>% 
-  mutate(
-    sex = get("sex"),
-    sr_prop = SR / max(SR)
-  )
-
-# combine into one dataframe
-res <- rbind(M_res, F_res, All_res)
+# create dataframe to populate
+res <- data.frame(matrix(NA, nrow = 0, ncol = 9))
+colnames(res) <- c("IUCN", "SR", "Raw", "NULL_MEAN", "NULL_SD", "NULL_SE", "SES", "Metric", "SR_prop")
+for (sex in c("M", "F", "All")){
+  # set file path
+  filename <- paste0("patch_", space,  "_SES_", "nsims", n_sims, "_", metric, "_", sex, ".csv")
+  # load file and calculate proportional species richness
+  temp_res <- read.csv(
+    here::here(
+    "2_Patches", "3_OutputData", "4_Diversity_measures", filename
+    )
+  ) %>% 
+    mutate(
+      sex = get("sex"),
+      sr_prop = SR / max(SR)
+    )
+  # add to dataframe
+  res <- rbind(res, temp_res)
+}
 
 # convert IUCN cat lost to factor and adjust levels
 res$IUCN <- as.factor(res$IUCN)
@@ -271,6 +283,9 @@ res %>%
   geom_point() + 
   scale_x_reverse() + 
   xlab("Remaining species richness") + ylab("Standard Effect Size") +
+  geom_hline(yintercept = 0, linetype = "dashed") + 
+  geom_hline(yintercept = -2, linetype = "dashed") +
   theme_light() + 
-  facet_wrap(~ sex, ncol = 1)
+  facet_wrap(~ sex, ncol = 1) + 
+  ggtitle(space)
 
