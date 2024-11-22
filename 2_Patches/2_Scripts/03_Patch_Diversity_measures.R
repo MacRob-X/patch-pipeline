@@ -6,9 +6,8 @@
 rm(list=ls())
 
 # load libraries
-library(dispRity)
+library(dplyr)
 library(ggfortify)
-library(umap)
 
 # create colour palette (colours taken from ggsci palette pal_simpsons(palette = "springfield"))
 springfield <- c(HomerYellow = "#FED439", FrinkPink = "#FD8CC1", HomerBlue = "#709AE1", DuffRed = "#C80813", 
@@ -26,52 +25,109 @@ springfield <- c(HomerYellow = "#FED439", FrinkPink = "#FD8CC1", HomerBlue = "#7
 # E.g. "Abeillia_abeillei-F"
 # Takes as IUCN input the dataframe created by the code in IUCN_API.R
 
-IUCNmatch <- function(colourData, iucnData){
+match_iucn <- function(colour_data, iucn_data, sex = "all"){
   
   # check if IUCN data contains necessary columns
-  if(!("scientific_name" %in% colnames(iucnData))){
+  if(!("scientific_name" %in% colnames(iucn_data))){
     stop("Please provide IUCN data which contains Latin species names in a column titled 'scientific_name'")
   }
   
   # add species name separated by _ to IUCN data
-  iucnData$species <- gsub(" ", "_", iucnData$scientific_name)   # note that I'll need to sort out the taxonomy before I do this for real
-  iucnData$specimen <- c(rep(NA, times = length(iucnData$species)))
+  iucn_data$species <- gsub(" ", "_", iucn_data$scientific_name)   # note that I'll need to sort out the taxonomy before I do this for real
+  iucn_data$specimen <- c(rep(NA, times = length(iucn_data$species)))
   
-  # get female specimen IUCN data
-  femIUCN <- iucnData[paste0(iucnData$species, "-F") %in% rownames(colourData), ]
-  femIUCN$specimen <- paste0(femIUCN$species, "-F")
-  
-  # get male specimen IUCN data
-  maleIUCN <- iucnData[paste0(iucnData$species, "-M") %in% rownames(colourData), ]
-  maleIUCN$specimen <- paste0(maleIUCN$species, "-M")
-  
-  # get unknown sex specimen IUCN data
-  unkIUCN <- iucnData[paste0(iucnData$species, "-U") %in% rownames(colourData), ]
-  unkIUCN$specimen <- paste0(unkIUCN$species, "-U")
-  
-  # concatenate into one big dataframe with specimen names that match colourData rownames
-  iucnMatch <- rbind(femIUCN, maleIUCN, unkIUCN)
-  
+  if(sex == "F"){
+    
+    # get female specimen IUCN data
+    fem_iucn <- iucn_data[paste0(iucn_data$species, "-F") %in% rownames(colour_data), ]
+    fem_iucn$specimen <- paste0(fem_iucn$species, "-F")
+    
+    # assign to dataframe
+    iucn_match <- fem_iucn
+    
+  } else if (sex == "M") {
+    
+    # get male specimen IUCN data
+    male_iucn <- iucn_data[paste0(iucn_data$species, "-M") %in% rownames(colour_data), ]
+    male_iucn$specimen <- paste0(male_iucn$species, "-M")
+    
+    # assign to dataframe
+    iucn_match <- male_iucn
+    
+  } else if (sex == "all") {
+    
+    # get female specimen IUCN data
+    fem_iucn <- iucn_data[paste0(iucn_data$species, "-F") %in% rownames(colour_data), ]
+    fem_iucn$specimen <- paste0(fem_iucn$species, "-F")
+    
+    # get male specimen IUCN data
+    male_iucn <- iucn_data[paste0(iucn_data$species, "-M") %in% rownames(colour_data), ]
+    male_iucn$specimen <- paste0(male_iucn$species, "-M")
+    
+    # get unknown sex specimen IUCN data
+    unk_iucn <- iucn_data[paste0(iucn_data$species, "-U") %in% rownames(colour_data), ]
+    unk_iucn$specimen <- paste0(unk_iucn$species, "-U")
+    
+    # concatenate into one big dataframe with specimen names that match colour_data rownames
+    iucn_match <- rbind(fem_iucn, male_iucn, unk_iucn)
+  }
+
   # trim species categorised as DD, EX, EW, or CR(PE) (after Hughes et al 2022)
-  levels(as.factor(iucnMatch$category))
-  iucnMatch <- iucnMatch[iucnMatch$category != "DD" & iucnMatch$category != "EX" & iucnMatch$category != "EW" & iucnMatch$category != "CR(PE)", ]
-  levels(as.factor(iucnMatch$category))
+  levels(as.factor(iucn_match$category))
+  iucn_match <- iucn_match[iucn_match$category != "DD" & iucn_match$category != "EX" & iucn_match$category != "EW" & iucn_match$category != "CR(PE)", ]
+  levels(as.factor(iucn_match$category))
   
   # remove species not present in IUCN data
-  colourData <- colourData[rownames(colourData) %in% iucnMatch$specimen,]
+  colour_data <- colour_data[rownames(colour_data) %in% iucn_match$specimen,]
   
-  # reorder IUCN data to match colourData
-  iucnMatch <- iucnMatch[match(rownames(colourData), iucnMatch$specimen), ]
+  # reorder IUCN data to match colour_data
+  iucn_match <- iucn_match[match(rownames(colour_data), iucn_match$specimen), ]
   
   # Check all specimens match between the two datasets
-  if(identical(iucnMatch$specimen, rownames(colourData))){
+  if(identical(iucn_match$specimen, rownames(colour_data))){
     print("All specimens in IUCN and colour data matched")
   }
   
-  matchedData <- list(iucnMatch, colourData)
+  matched_data <- list(iucn_match, colour_data)
   
-  return(matchedData)
+  return(matched_data)
   
+}
+
+# dispRity-style function to calculate mean distance to given number of nearest neighbours
+mean.nn.dist <- function(matrix, nn = NULL, method = "euclidean") {
+  
+  ## Set number of neighbours to all if not specified
+  if(is.null(nn)){
+    nn <- nrow(matrix)
+  }
+  
+  ## Calculate all pairwise distances
+  pair.dists <- as.matrix(vegan::vegdist(matrix, method = method))
+  
+  ## Get nn closest for each point
+  mean.nn.dists <- apply(pair.dists, 1, function(one.row, nn) mean(sort(one.row)[2:nn + 1]), nn = nn)
+  
+  ## Return values
+  return(mean.nn.dists)
+}
+
+# dispRity-style function to count number of neighbours within a given radius (written by Thomas Guillerme)
+count.neighbours <- function(matrix, radius = 1, relative = TRUE, method = "euclidean") {
+  ## Check if the matrix is a distance matrix first
+  distances <- as.matrix(dist(matrix, method = method))
+  ## Set the radius to something if it's a function
+  if(is(radius, "function")) {
+    radius <- radius(distances)
+  }
+  ## For each row count how many distances are < radius (minus one is for the diagonal that's = 0)
+  counts <- apply(distances, 1, function(one_row, radius) sum(one_row <= radius), radius = radius) - 1
+  ## Return the counts
+  if(relative) {
+    return(unname(counts/ncol(distances)))
+  } else {
+    return(unname(counts))
+  }
 }
 
 #-----------------------------------------------------------------------------------------#
@@ -79,13 +135,33 @@ IUCNmatch <- function(colourData, iucnData){
 # Load and prepare data ----
 
 # load patch data
-pcaAll <- readRDS("./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/Neoaves.patches.231030.PCAcolspaces.jndxyzlumr.240404.rds")
+pca_all <- readr::read_rds(
+  here::here(
+    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
+    "Neoaves.patches.231030.PCAcolspaces.jndxyzlumr.240603.rds"
+  )
+)
 
-# use first 16 PCs (~97% cumulative percentage of variance)
-pcaDat <- pcaAll$x[,1:16]
+# load umap patch data (output from 02b_Patch_Umap_iterations.R)
+umap_jndxyzlumr <- readr::read_rds(
+  here::here(
+    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
+    "Neoaves.patches.pca.jndxyzlumr.UMAPs.iterations.240603.rds"
+  )
+) %>% 
+  magrittr::extract2(1) %>% 
+  magrittr::extract2("layout") %>% 
+  as.data.frame() %>% 
+  rename(
+    umap_1 = V1, umap_2 = V2
+  )
 
 # load IUCN Red List data
-iucn <- readRDS("./4_SharedInputData/IUCN_RedList_data_130324.rds")
+iucn <- readr::read_rds(
+  here::here(
+    "4_SharedInputData", "IUCN_RedList_data_130324.rds"
+  )
+)
 
 
 #--------------------------------------------------------------#
@@ -95,52 +171,81 @@ iucn <- readRDS("./4_SharedInputData/IUCN_RedList_data_130324.rds")
 
 # Mean distance to centroid by IUCN category - boxplot
 
+# get data (could use first 16 PCs (~97% cumulative percentage of variance) if want to simplify)
+pca_dat <- pca_all$x
+
 # match iucn and PCA data
-matchedData <- IUCNmatch(pcaDat, iucn)
-iucnDat <- as.data.frame(matchedData[1])
-pcaDat <- as.data.frame(matchedData[2])
-rm(matchedData)
+matched_data <- match_iucn(pca_dat, iucn, sex = "all")
+iucn_dat <- as.data.frame(matched_data[1])
+pca_dat <- as.data.frame(matched_data[2])
+rm(matched_data)
 
 # convert data to matrix for analyses
-pcaDat <- as.matrix(pcaDat)
+pca_dat <- as.matrix(pca_dat)
 
-# get distances to centroid for each specimen
-centroidDistances <- as.data.frame(dispRity(pcaDat, metric = centroids)$disparity[[1]][[1]])
-rownames(centroidDistances) <- rownames(pcaDat)
-colnames(centroidDistances) <- c("centr_dist")
-globDist <- centroidDistances
+# get distances to centroid for each species/sex pair
+centroid_distances <- as.data.frame(dispRity::dispRity(pca_dat, metric = mean.nn.dist, nn = 5)$disparity[[1]][[1]])
+rownames(centroid_distances) <- rownames(pca_dat)
+colnames(centroid_distances) <- c("centr_dist")
+glob_dist <- centroid_distances
+
+# check density of centroid distances
+ggplot() + 
+  geom_density(data = centroid_distances, aes(x = centr_dist))
+ggplot() + 
+  geom_histogram(data = centroid_distances, aes(x = centr_dist), bins = 50)
 
 # attach IUCN categories to distance data
-globDist$iucn <- iucnDat$category[match(rownames(globDist), iucnDat$specimen)] # note that since I've already matched the order the match() function is redundant here, but I'm leaving it in as a failsafe
+glob_dist <- glob_dist %>% 
+  mutate(
+    iucn = iucn_dat$category[match(rownames(glob_dist), iucn_dat$specimen)]
+  )
+# note that since I've already matched the order the match() function is redundant here, but I'm leaving it in as a failsafe
 
 # add duplicate of each specimen with iucn cat "All" (for plotting box plot)
-allDist <- globDist
-allDist$iucn <- c("All")
+all_dist <- glob_dist
+all_dist$iucn <- c("All")
 
-all <- rbind(globDist, allDist)
+all <- rbind(glob_dist, all_dist)
+
+# add species names and sex as columns
+all <- all %>% 
+mutate(
+  species = sapply(strsplit(rownames(.), split = "-"), "[", 1),
+  sex = sapply(strsplit(rownames(.), split = "-"), "[", 2),
+)
 
 # reorder levels of iucn cat for plotting
 all$iucn <- factor(all$iucn, levels = c("CR", "EN", "VU", "NT", "LC", "All"))
 
 # create colour mapping
 cols <- springfield[1:length(levels(all$iucn))]
+names(cols) <- levels(all$iucn)
 
 # plot mean distance to centroid of each IUCN category (boxplot)
-boxplot(centr_dist ~ iucn, data = all, 
-        horizontal = FALSE,
-        frame = FALSE,
-        notch = TRUE,
-        col = cols,
-        xlab = "Subset of IUCN categories", ylab = "Distance to centroid")
+# ggplot version (can subset by sex)
+all %>% 
+#  filter(
+#  sex == "M",
+#  iucn != "All") %>% 
+ggplot(aes(x = iucn, y = centr_dist, fill = iucn)) + 
+  geom_boxplot(notch = TRUE, show.legend = FALSE) + 
+  scale_fill_manual(values = cols) + 
+  xlab("Subset of IUCN categories") + ylab("Distance to centroid") +
+#  ylim(c(0, 90)) +
+  theme_minimal()
+  
 
-
-# ok, so it looks like there might be some kind of difference between the mean distance to centroid (i.e. a measure of colour diversity)
-# in different IUCN categories - let's just do a 
+# ok, so it looks like there might be some kind of difference between the mean distance to centroid (i.e. a measure 
+# of colour diversity) in different IUCN categories - let's just do a 
 # basic ANOVA ----
 # to find out
 
+# reorder levels of iucn cat for modelling (with "LC" as the reference category once 'All' cat is removed)
+all$iucn <- factor(all$iucn, levels = c("All", "LC", "CR", "EN", "VU", "NT"))
+
 # make a model (will automatically perform an anova with a categorical predictor) with log transformed centroid distances to fulfil assumptions
-mod <- lm(log(centr_dist) ~ iucn, data = all)
+mod <- lm(log(centr_dist) ~ iucn, data = all %>% filter(iucn != "All"))
 
 # check assumptions
 autoplot(mod, smooth.colour = NA)
@@ -176,54 +281,196 @@ tukey_base$iucn[rownames(tukey_base$iucn) == "NT-LC" |
                   rownames(tukey_base$iucn) == "VU-LC" |
                   rownames(tukey_base$iucn) == "EN-LC", ]
 
-# Just for fun, let's look at distance to centroid vs midpoint of latitudinal range
-latData <- read.csv("./Data/data_cooney_etal_latitude.csv", header = TRUE) # from Cooney et al 2022
+
+# plot IUCN categories on UMAP colourspace
+# match iucn and umap data
+matched_data <- match_iucn(umap_jndxyzlumr, iucn)
+iucn_dat <- as.data.frame(matched_data[1])
+umap_dat <- as.data.frame(matched_data[2]) %>% 
+  mutate(
+    iucn_cat = factor(iucn_dat$category, levels = c("CR", "EN", "VU", "NT", "LC"))
+  )
+rm(matched_data)
+
+# set colour mapping
+cols <- springfield[1:length(levels(umap_dat$iucn_cat))]
+
+# plot
+ggplot(umap_dat, aes(x = umap_1, y = umap_2, colour = iucn_cat)) + 
+  geom_point() + 
+  facet_wrap(~ iucn_cat) + 
+  theme_bw()
+
+# and as hexbin
+ggplot(umap_dat, aes(x = umap_1, y = umap_2)) + 
+  geom_hex() + 
+  facet_wrap(~ iucn_cat) + 
+  theme_bw()
+
+
+# plot different IUCN categories in black with others in transparent grey
+plots <- vector("list", length =  length(levels(umap_dat$iucn_cat)))
+
+for(i in 1:length(levels(umap_dat$iucn_cat))){
+  cat <- levels(umap_dat$iucn_cat)[i]
+  plots[i] <- list(
+    ggplot(umap_dat, aes(x = umap_1, y = umap_2)) + 
+      geom_point(
+        data = umap_dat %>% 
+          filter(
+            iucn_cat != cat
+          ),
+        aes(x = umap_1, y = umap_2), colour = "skyblue", alpha = 1/8, size = 0.9) + 
+      geom_point(
+        data = umap_dat %>% 
+          filter(
+            iucn_cat == cat
+          ),
+        aes(x = umap_1, y = umap_2), colour = "midnightblue", alpha = 2/3, size = 0.9) + 
+      xlab("UMAP axis 1") + ylab("UMAP axis 2") + 
+      theme_bw()
+  )
+}
+
+# plot all on one figure
+ggpubr::ggarrange(
+  plots[[1]], plots[[2]], plots[[3]], plots[[4]], plots[[5]], 
+  labels = c("A", "B", "C", "D", "E"),
+  nrow = 2, ncol = 3
+)
+
+
+## Calculate convex hull volume, sequentially dropping each IUCN category ----
+## Note that we will only use the first 8 PCs as otherwise it's too computationally intensive
+
+# attach iucn data to pca data
+conv_dat <- pca_dat %>% 
+  as.data.frame() %>% 
+  mutate(
+    iucn = factor(iucn_dat$category[match(rownames(pca_dat), iucn_dat$specimen)], 
+                     levels = c("CR", "EN", "VU", "NT", "LC"))
+  )
+
+# set up empty list
+conv_hull_vols <- data.frame(
+  "iucn_subset" = factor(c("All", "-CR", "-EN", "-VU"), levels = c("All", "-CR", "-EN", "-VU")),
+  "volume" = c(rep(NA, length = length(levels(conv_dat$iucn)) - 1))
+)
+
+# volume of all species
+conv_hull_vols$volume[1] <- geometry::convhulln(as.matrix(conv_dat[, 1:8]), 
+                                             output.options = TRUE)$vol
+# remove CR species
+conv_hull_vols$volume[2] <- geometry::convhulln(as.matrix(filter(conv_dat, iucn != "CR")[, 1:8]), 
+                                             output.options = TRUE)$vol
+
+# remove CR and EN species
+conv_hull_vols$volume[3] <- geometry::convhulln(as.matrix(filter(conv_dat, iucn != "CR" & iucn != "EN")[, 1:8]), 
+                                             output.options = TRUE)$vol
+
+# remove CR, EN, and VU species (i.e. leave only NT species)
+conv_hull_vols$volume[4] <- geometry::convhulln(as.matrix(filter(conv_dat, iucn != "CR" & iucn != "EN" & iucn != "VU")[, 1:8]), 
+                                             output.options = TRUE)$vol
+
+# add column to represent change as proportion of original volume
+conv_hull_vols$rel_volume <- conv_hull_vols$volume / max(conv_hull_vols$volume)
+
+# plot results
+# create colour mapping
+cols <- springfield[1:length(conv_hull_vols)]
+names(cols) <- names(conv_hull_vols)
+
+# plot mean distance to centroid of each IUCN category (boxplot)
+# ggplot version (can subset by sex)
+conv_hull_vols %>% 
+  ggplot(aes(x = iucn_subset, y = rel_volume, colour = iucn_subset, size = rel_volume)) + 
+  geom_point(notch = TRUE, show.legend = FALSE) + 
+  scale_fill_manual(values = cols) + 
+  scale_size_continuous(range = c(10, 20)) +
+  xlab("Subset of IUCN categories") + ylab("Convex hull hypervolume") +
+  #  ylim(c(0, 90)) +
+  theme_minimal()
+
+
+
+
+
+## Just for fun, let's look at distance to centroid vs midpoint of latitudinal range ----
+lat_data <- readr::read_csv(
+  here::here(
+    "4_SharedInputData", "Cooney_etal_2022", "data_cooney_etal_latitude.csv"
+  )
+)
 
 # get female specimen lat data
-femLat <- latData[paste0(latData$Binomial, "-F") %in% rownames(pcaDat), ]
-femLat$specimen <- paste0(femLat$Binomial, "-F")
+fem_lat <- lat_data[paste0(lat_data$Binomial, "-F") %in% rownames(pca_dat), ]
+fem_lat$specimen <- paste0(fem_lat$Binomial, "-F")
 # get male specimen lat data
-maleLat <- latData[paste0(latData$Binomial, "-M") %in% rownames(pcaDat), ]
-maleLat$specimen <- paste0(maleLat$Binomial, "-M")
+male_lat <- lat_data[paste0(lat_data$Binomial, "-M") %in% rownames(pca_dat), ]
+male_lat$specimen <- paste0(male_lat$Binomial, "-M")
 # get unknown sex specimen lat data
-unkLat <- latData[paste0(latData$Binomial, "-U") %in% rownames(pcaDat), ]
-unkLat$specimen <- paste0(unkLat$Binomial, "-U") # looks like there are no species in the lat data that have unknown sex in the patch data
-# concatenate into one big dataframe with specimen names that match pcaDat rownames
-lats <- rbind(femLat, maleLat)
+unk_lat <- lat_data[paste0(lat_data$Binomial, "-U") %in% rownames(pca_dat), ]
+unk_lat$specimen <- paste0(unk_lat$Binomial, "-U") # looks like there are no species in the lat data that have unknown sex in the patch data
+# concatenate into one big dataframe with specimen names that match pca_dat rownames
+lats <- rbind(fem_lat, male_lat)
 # remove species not present in lat data
-pcaDat <- pcaDat[rownames(pcaDat) %in% lats$specimen,]
-# reorder IUCN data to match pcaDat
-lats <- lats[match(rownames(pcaDat), lats$specimen), ]
+pca_dat <- pca_dat[rownames(pca_dat) %in% lats$specimen,]
+# reorder IUCN data to match pca_dat
+lats <- lats[match(rownames(pca_dat), lats$specimen), ]
 # Check all specimens match between the two datasets
-identical(lats$specimen, rownames(pcaDat))
+identical(lats$specimen, rownames(pca_dat))
 # remove temporary datasets
-rm(list = c("femLat", "maleLat", "unkLat"))
+rm(list = c("fem_lat", "male_lat", "unk_lat"))
 
 # get distances to centroid for each specimen
-centroidDistances <- as.data.frame(dispRity(pcaDat, metric = centroids)$disparity[[1]][[1]])
-rownames(centroidDistances) <- rownames(pcaDat)
-colnames(centroidDistances) <- c("centr_dist")
-latDists <- centroidDistances
+centroid_distances <- as.data.frame(dispRity::dispRity(pca_dat, metric = dispRity::centroids)$disparity[[1]][[1]])
+rownames(centroid_distances) <- rownames(pca_dat)
+colnames(centroid_distances) <- c("centr_dist")
+lat_dists <- centroid_distances
+
+# check centroid distance distribution
+ggplot() + 
+  geom_histogram(data = centroid_distances, aes(x = centr_dist), bins = 60)
+# looks quite skewed, so might want to log-transform
+ggplot() + 
+  geom_histogram(data = centroid_distances, aes(x = log(centr_dist)), bins = 60)
 
 # attach latitude data to centroid distances data
-latDists$midpointLat <- lats$MidpointLat
+lat_dists$midpoint_lat <- lats$MidpointLat
 
 # plot scatterplot of latitude vs distance to centroid
-scatter.smooth(y = latDists$centr_dist, x = latDists$midpointLat, 
+scatter.smooth(y = lat_dists$centr_dist, x = lat_dists$midpoint_lat, 
      frame = F,
      xlab = "Mean latitude of species range", ylab = "Distance to centroid")
 
-latMod <- lm(centr_dist ~ abs(midpointLat), data = latDists)
+ggplot(lat_dists, aes(x = midpoint_lat, y = centr_dist)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  xlab("Mean latitude of species range") + ylab("Distance to centroid")
+
+# with log-transformed centroid distances
+ggplot(lat_dists, aes(x = midpoint_lat, y = log(centr_dist))) + 
+  geom_point() + 
+  geom_smooth(method = "lm")+ 
+  xlab("Mean latitude of species range") + ylab("Distance to centroid (log-transformed")
+
+# and plotting absolute value of latitude (to see if species closer to equator have higher distance to centroid)
+ggplot(lat_dists, aes(x = abs(midpoint_lat), y = log(centr_dist))) + 
+  geom_point() + 
+  geom_smooth(method = "lm")+ 
+  xlab("Absolute mean latitude of species range") + ylab("Distance to centroid (log-transformed")
+
+latMod <- lm(log(centr_dist) ~ abs(midpoint_lat), data = lat_dists)
 # i should really check the assumptions of the model are met here but as I'm just messing around I'll skip it
 summary(latMod)
 # looks like distance to centroid declines with increasing (absolute) latitude, and the result is highly significant, although
-# with an R2 or 0.015, it explains little of the observed variance. So latitude affects uniqueness of colour patternins, but
+# with an R2 or 0.015, it explains little of the observed variance. So latitude affects uniqueness of colour patterning, but
 # only has a very small effect compared to other things
 
 
 
 # Colour different IUCN categories on UMAP ----
-umapAll <- umap(pcaAll$x)
+umapAll <- umap::umap(pca_all$x)
 
 # create dataframe from UMAP to manipulate
 umapMan <- data.frame(umapAll$layout)
@@ -236,13 +483,13 @@ for(i in 1:l){
 }
 
 # match IUCN and umap data
-matchedData <- IUCNmatch(umapMan, iucn)
-iucnDat <- as.data.frame(matchedData[1])
-umapDat <- as.data.frame(matchedData[2])
-rm(matchedData, umapMan, l, split)
+matched_data <- match_iucn(umapMan, iucn)
+iucn_dat <- as.data.frame(matched_data[1])
+umapDat <- as.data.frame(matched_data[2])
+rm(matched_data, umapMan, l, split)
 
 # attach IUCN categories to umap data
-umapDat$iucn <- as.factor(iucnDat$category)
+umapDat$iucn <- as.factor(iucn_dat$category)
 
 # create colour mapping
 # create colour mapping
@@ -612,19 +859,19 @@ svg_plot(umapDat = passDat, cols = cols, pointShapes = pointShapesPass, legend =
 #  Zheng et al, 2021, Remote Sens. Environ
 
 # working version of PCA data
-pcaDat <- pcaAll$x
+pca_dat <- pca_all$x
 
 # match iucn and PCA data
-matchedData <- IUCNmatch(pcaDat, iucn)
-iucnDat <- as.data.frame(matchedData[1])
-pcaDat <- as.data.frame(matchedData[2])
-rm(matchedData)
+matched_data <- match_iucn(pca_dat, iucn)
+iucn_dat <- as.data.frame(matched_data[1])
+pca_dat <- as.data.frame(matched_data[2])
+rm(matched_data)
 
 # convert data to matrix for analyses
-pcaDat <- as.matrix(pcaDat)
+pca_dat <- as.matrix(pca_dat)
 
 # get overall functionall evenness
-minSpanEven <- dispRity::dispRity(pcaDat, metric = dispRity::func.div)
+minSpanEven <- dispRity::dispRity(pca_dat, metric = dispRity::func.div)
 
 summary(minSpanEven)
 
@@ -632,7 +879,7 @@ summary(minSpanEven)
 ## by taxon subgroup
 
 # convert pca data to data frame
-pcaDat <- as.data.frame(pcaDat)
+pca_dat <- as.data.frame(pca_dat)
 
 # taxonomy data
 taxo <- read.csv("./4_SharedInputData/BLIOCPhyloMasterTax_2019_10_28.csv")
@@ -641,40 +888,40 @@ taxo <- read.csv("./4_SharedInputData/BLIOCPhyloMasterTax_2019_10_28.csv")
 taxo$specimen <- c(rep(NA, times = length(taxo$TipLabel)))
 
 # get female specimen IUCN data
-femTaxo <- taxo[paste0(taxo$TipLabel, "-F") %in% rownames(pcaDat), ]
+femTaxo <- taxo[paste0(taxo$TipLabel, "-F") %in% rownames(pca_dat), ]
 femTaxo$specimen <- paste0(femTaxo$TipLabel, "-F")
 
 # get male specimen IUCN data
-maleTaxo <- taxo[paste0(taxo$TipLabel, "-M") %in% rownames(pcaDat), ]
+maleTaxo <- taxo[paste0(taxo$TipLabel, "-M") %in% rownames(pca_dat), ]
 maleTaxo$specimen <- paste0(maleTaxo$TipLabel, "-M")
 
 # get unknown sex specimen IUCN data
-unkTaxo <- taxo[paste0(taxo$TipLabel, "-U") %in% rownames(pcaDat), ]
+unkTaxo <- taxo[paste0(taxo$TipLabel, "-U") %in% rownames(pca_dat), ]
 unkTaxo$specimen <- paste0(unkTaxo$TipLabel, "-U")
 
-# concatenate into one big dataframe with specimen names that match pcaDat rownames
+# concatenate into one big dataframe with specimen names that match pca_dat rownames
 taxoMatch <- rbind(femTaxo, maleTaxo, unkTaxo)
 
 # remove temp dataframes
 rm(femTaxo, maleTaxo, unkTaxo)
 
 # remove species not present in IUCN data
-pcaDat <- pcaDat[rownames(pcaDat) %in% taxoMatch$specimen,]
+pca_dat <- pca_dat[rownames(pca_dat) %in% taxoMatch$specimen,]
 
-# reorder taxo data to match pcaDat
-taxoMatch <- taxoMatch[match(rownames(pcaDat), taxoMatch$specimen), ]
+# reorder taxo data to match pca_dat
+taxoMatch <- taxoMatch[match(rownames(pca_dat), taxoMatch$specimen), ]
 
 # Check all specimens match between the two datasets
-if(identical(taxoMatch$specimen, rownames(pcaDat))){
+if(identical(taxoMatch$specimen, rownames(pca_dat))){
   print("All specimens in IUCN and colour data matched")
 }
 
 # attach taxon subgroups to PCA data
-pcaDat$taxon_subgroup <- taxoMatch$Taxon_subgroup
+pca_dat$taxon_subgroup <- taxoMatch$Taxon_subgroup
 
 
 # calculate minimum spanning evenness by taxon subgroup
-taxon_subgroups <- unique(pcaDat$taxon_subgroup)
+taxon_subgroups <- unique(pca_dat$taxon_subgroup)
 # create placeholder vector
 min_span_by_taxon <- vector(
   "numeric",
@@ -688,7 +935,7 @@ names(min_span_by_taxon) <- taxon_subgroups
 for(group in taxon_subgroups){
   min_span_by_taxon[group] <- dispRity::dispRity(
     as.matrix(
-      pcaDat[pcaDat$taxon_subgroup == group, 1:ncol(pcaDat) - 1]
+      pca_dat[pca_dat$taxon_subgroup == group, 1:ncol(pca_dat) - 1]
       ), 
     metric = dispRity::func.eve
     )$disparity[[1]][[1]]
@@ -721,7 +968,7 @@ names(func_div_by_taxon) <- taxon_subgroups
 for(group in taxon_subgroups){
   func_div_by_taxon[group] <- dispRity::dispRity(
     as.matrix(
-      pcaDat[pcaDat$taxon_subgroup == group, 1:ncol(pcaDat) - 1]
+      pca_dat[pca_dat$taxon_subgroup == group, 1:ncol(pca_dat) - 1]
     ), 
     metric = dispRity::func.div
   )$disparity[[1]][[1]]
@@ -752,7 +999,7 @@ names(nn_by_taxon) <- taxon_subgroups
 for(group in taxon_subgroups){
   nn_by_taxon[group] <- dispRity::dispRity(
     as.matrix(
-      pcaDat[pcaDat$taxon_subgroup == group, 1:ncol(pcaDat) - 1]
+      pca_dat[pca_dat$taxon_subgroup == group, 1:ncol(pca_dat) - 1]
     ), 
     metric = dispRity::neighbours
   )$disparity[[1]][[1]] %>% 
@@ -764,7 +1011,7 @@ for(group in taxon_subgroups){
 library(ggplot2)
 
 # count species in each subgroup
-n_spec <- pcaDat %>% 
+n_spec <- pca_dat %>% 
   group_by(taxon_subgroup) %>% 
   count() %>% 
   mutate(taxon_subgroup = janitor::make_clean_names(taxon_subgroup))
@@ -812,7 +1059,7 @@ geom_point(data = div_df, aes(x = n_spec, y = func_eve, colour = taxon_subgroup,
 # as might expect males to occupy edges while females occupy centroid
 
 # let's just do it for a small subtaxon first - maybe tyrannidae
-tyran_df <- pcaDat %>% 
+tyran_df <- pca_dat %>% 
   filter(taxon_subgroup == "Tyrannidae") %>% 
   mutate(
     species = sapply(strsplit(rownames(.), split = "-"), "[", 1),
