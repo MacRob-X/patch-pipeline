@@ -50,6 +50,8 @@ pam_res <- "50km"
 # enter PAM files location
 pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLife_Shapefiles_GHT/PAMs"
 #pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLife_Shapefiles_v9/PAMs/100km/Behrmann_cea/"
+# use ecoregions or biomes?
+regions <- "biomes"
 ## END EDITABLE CODE ##
 
 # set dispRity metric
@@ -80,13 +82,70 @@ pam_raw <- readRDS(
   paste(pams_filepath, pam_filename, sep = "/")
 )
 
-# load Dinerstein et al 2017 ecoregion shape files
-ecoregions <- sf::st_read(
-  here::here(
-    "4_SharedInputData", "Ecoregions2017_accessed2024-10-07",
-    "Ecoregions2017.shp"
+# load Dinerstein et al 2017 ecoregion or biome shape files
+if(regions == "ecoregions"){
+  ecoregions <- sf::st_read(
+    here::here(
+      "4_SharedInputData", "Ecoregions2017_accessed2024-10-07",
+      "Ecoregions2017.shp"
+    )
   )
-)
+} else if(regions == "biomes"){
+  
+  # check if biomes file is already present
+  if(file.exists(here::here(
+        "4_SharedInputData", "Ecoregions2017_accessed2024-10-07",
+        "Biomes2017.shp"
+      ))){
+    
+    # load file if present
+    ecoregions <- sf::st_read(
+        here::here(
+          "4_SharedInputData", "Ecoregions2017_accessed2024-10-07",
+          "Biomes2017.shp"
+        )
+      )
+    
+  } else{
+    
+    # create biomes file from ecoregions and save    
+    print("No biomes shapefile present - creating from ecoregions file")
+    
+    # load ecoregions
+    ecoregions <- sf::st_read(
+      here::here(
+        "4_SharedInputData", "Ecoregions2017_accessed2024-10-07",
+        "Ecoregions2017.shp"
+      )
+    )
+    
+    # make geometries valid so we can combine them
+    ecoregions <- ecoregions %>% 
+      mutate(
+        geometry = sf::st_make_valid(geometry)
+      )
+    # group by biome and then combine geometries within each biome
+    # note that this takes about 15 minutes to run
+    ecoregions <- ecoregions %>% 
+      group_by(BIOME_NUM, BIOME_NAME) %>% 
+      summarise(
+        geometry = sf::st_union(geometry),
+      ) %>% 
+      ungroup()
+    
+    # save as shapefile
+    ecoregions %>% 
+      sf::st_write(
+        here::here(
+          "4_SharedInputData", "Ecoregions2017_accessed2024-10-07",
+          "Biomes2017.shp"
+        )
+      )
+      
+    }
+  
+}
+
 
 
 ## Analysis ----
@@ -138,16 +197,6 @@ if(sex_match == "matchedsex"){
 spec_list <- unique(pca_dat$species)
 spec_keep <- colnames(pam_allspec)[colnames(pam_allspec) %in% spec_list]
 pam <- pam_allspec[, spec_keep]
-
-#####################################################
-#####################################################
-##### NEED TO APPLY SPECIES RICHNESS FILTER #########
-##### TO PAM IN SOME WAY                    #########
-#####################################################
-#####################################################
-# actually do I? I'm not sure I do
-# probably the right thing to do is to set values of mean
-# diversity for ecoregions with <5 species equal to NA
 
 # remove raw PAMs for RAM reasons
 rm(pam_allspec, pam_raw)
@@ -230,9 +279,9 @@ null_terrast <- terra::rast(null_rast)
 # returns [1, 2] matrix that can be inputted to ecoregion data
 calc_avg_metric <- function(ecoreg, metric_M, metric_F, null_terrast, ncells, avg){
   
-  # for debugging purposes
-  ecoreg_num <- ecoreg$OBJECTID
-  ecoreg_name <- ecoreg$ECO_NAME
+  # for debugging purposes (only works if regions == "ecoregions)
+  # ecoreg_num <- ecoreg$OBJECTID
+  # ecoreg_name <- ecoreg$ECO_NAME
   
   # create null rast, subsetted to extent of ecoregion
   # first assign values to null_rast to keep track of grid cells
@@ -273,15 +322,18 @@ calc_avg_metric <- function(ecoreg, metric_M, metric_F, null_terrast, ncells, av
   
   avgs <- c(avg_metric_M, avg_metric_F, sr)
   
-  ## SET VALUES FOR ECOREGION OBJECTID 207 - "Rock and Ice" - BIOM_NUM 11 - to 
-  ## NA - it seems, from looking at Dinerstein et al (2017) and their interactive map
-  ## https://ecoregions.appspot.com/ that this should be possibly excluded as it's
-  ## basically uninhabited - it has an artificially extremely high species richness
-  ## because it spans all of Antarctica, Greenland, parts of the Himalaya, Iceland, 
-  ## and Northwestern North America
-  if(ecoreg$OBJECTID == 207){
-    avgs <- rep(NA, times = 3)
+  if(regions == "ecoregions"){
+    ## SET VALUES FOR ECOREGION OBJECTID 207 - "Rock and Ice" - BIOM_NUM 11 - to 
+    ## NA - it seems, from looking at Dinerstein et al (2017) and their interactive map
+    ## https://ecoregions.appspot.com/ that this should be possibly excluded as it's
+    ## basically uninhabited - it has an artificially extremely high species richness
+    ## because it spans all of Antarctica, Greenland, parts of the Himalaya, Iceland, 
+    ## and Northwestern North America
+    if(ecoreg$OBJECTID == 207){
+      avgs <- rep(NA, times = 3)
+    }
   }
+
   
   return(avgs)
   
@@ -339,7 +391,7 @@ pf <- ggplot() +
 
 plots[["female_metric"]] <- pf
 
-png_filename <- paste(clade, "patches", "ecoregions", space, sex_match, avg, metric, "sr_thresh", sr_threshold, pam_res, "Behrman", pam_type, pam_seas, "png", sep = ".")
+png_filename <- paste(clade, "patches", regions, space, sex_match, avg, metric, "sr_thresh", sr_threshold, pam_res, "Behrman", pam_type, pam_seas, "png", sep = ".")
 png(
   here::here(
     "2_Patches", "4_OutputPlots", "3_Spatial_mapping", pam_res, space,
