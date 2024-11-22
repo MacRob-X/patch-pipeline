@@ -1,24 +1,17 @@
-## Development version of 04a_Patch_spatial_mapping.R
+## Spatial mapping using Presence-Absence Matrices (PAMs) provided by Chris Cooney & Gavin Thomas
 ## Robert MacDonald
 ## 2nd October 2024
-## 
-## Note that this script works with the ranges_10_species file, which contains range maps for 10 species randomly extracted from the 
-## BOTW range maps 
-## 
-## Code used to produce the ranges_10_species file can be found at the bottom of this script
-## This includes useful code for munging the all-species data
+
 
 # clear environment
 rm(list=ls())
 
 ## Load libraries ----
-library(dplyr)
-library(sf)
-library(terra)
 library(ggplot2)
+library(dplyr)
+#library(terra)
 library(tidyterra)
 library(dispRity)
-
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
@@ -27,12 +20,17 @@ clade <- "Passeriformes"
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
 space <- "lab"
-# select sex ("M", "F", "All")
-sex <- "M"
+# select sex (""allspecimens" or "matchedsex")
+# "matchedsex" will subset to only species for which we have at least one
+# male and female specimen
+sex_match <- "matchedsex"
 # select metric ("centr-dist", "nn-k", "nn-count")
 # note that nn-k is EXTREMELY slow to run - needs parallelisation (but will probably still
 # be too slow to run)
 metric <- "centr-dist"
+# select whether to exclude grid cells with species richness below a certain threshold (e.g. 5)
+# set as 0 if no threshold wanted
+sr_threshold <- 5
 # select whther to use liberal, conservative, or nominate IUCN data
 # "liberal" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
 # are assigned the highest threat level of the multiple species
@@ -41,10 +39,16 @@ metric <- "centr-dist"
 # "nominate" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
 # are assigned the threat level of the BL species that corresponds to the nominate subspecies
 iucn_type <- "nominate"
-# enter range maps location
-rangemaps_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife_dist_maps_2022.2"
+# select whether to use liberal, conservative, or specified PAM
+pam_type <- "conservative"
+# clip PAM to land only? ("_clipped" or "")
+pam_seas <- "_clipped"
+# select PAM grid cell resolution
+pam_res <- "50km"
+# enter PAM files location
+pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLife_Shapefiles_GHT/PAMs"
+#pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLife_Shapefiles_v9/PAMs/100km/Behrmann_cea/"
 ## END EDITABLE CODE ##
-
 
 # set dispRity metric
 if(metric == "centr-dist"){
@@ -66,38 +70,72 @@ pca_all <- readRDS(
   )
 )
 
-# get world map (for plotting and for CRS)
-# we need to get the CRS from this because when I created the ranges_10_species file I used a CRS that doesn't seem to work
-# with the rasterize function
-world <- rnaturalearth::ne_countries(returnclass = "sf")
-
-# inspect layers of sample 10-species data
-st_layers(
-  paste(rangemaps_filepath, "ranges_10", "ranges_10_species.shp", sep = "/")
+# load PAM
+pam_filename <- paste0("PAM_birds_Behrman", pam_res, "_Pres12_Orig12_Seas12_", pam_type, pam_seas, ".rds")
+# or
+#pam_filename <- paste0(pam_res, "_Behrmann_cea_PAM_combined.rds")
+pam_raw <- readRDS(
+  paste(pams_filepath, pam_filename, sep = "/")
 )
 
-# read in sample 10-species data 
-ranges_10 <- sf::st_read(
-  dsn = paste(rangemaps_filepath, "ranges_10", "ranges_10_species.shp", sep = "/")
-) %>% 
-  st_transform(crs = crs(world))
 
+## Analysis ----
 
-## Munging ----
-## Note that prior to this step, taxonomy clashes must be resolved
+# Set spatial parameters
+null_rast <- pam_raw[[2]]
+pam_allspec <- pam_raw[[1]]
+colnames(pam_allspec) <- gsub(" ", "_", colnames(pam_allspec))
+crs <- as.character(raster::crs(null_rast)) # Behrmann cylindrical equal area projection (standard parallels at 30 deg)
+
 
 # Extract PCA co-ordinates data and add species and sex columns
+# filter to males only for simplicity
+# NEED TO ALTER CODE SO SEX FILTERING HAPPENS _AFTER_ CENTROID DISTANCE CALCULATION
 pca_dat <- pca_all$x %>% 
   as.data.frame() %>% 
   mutate(
     species = sapply(strsplit(rownames(.), split = "-"), "[", 1),
     sex = sapply(strsplit(rownames(.), split = "-"), "[", 2)
-  )
+   )# %>% 
+  # filter(
+  #   sex == sex
+  # )
+
+# if specified, clip to only species for which we have at least one male and female specimen
+if(sex_match == "matchedsex"){
+  
+  # get list of species to keep
+  species_list <- pca_dat[, c("species", "sex")]
+  species_m <- species_list[species_list$sex == "M", "species"]
+  species_f <- species_list[species_list$sex == "F", "species"]
+  spec_to_keep <- intersect(species_m, species_f)
+  
+  # subset data to these species
+  pca_dat <- pca_dat[pca_dat$species %in% spec_to_keep, ]
+  
+  # remove variables
+  rm(species_list, species_m, species_f, spec_to_keep)
+  
+  # set list of sexes (for looping later)
+  sexes <- c("M", "F")
+
+} else if(sex_match == "allspecimens"){
+  sexes <- c("M", "F", "U")
+}
+
+# subset pam so it includes only species in patch data
+spec_list <- unique(pca_dat$species)
+spec_keep <- colnames(pam_allspec)[colnames(pam_allspec) %in% spec_list]
+pam <- pam_allspec[, spec_keep]
+
+# remove raw PAMs for RAM reasons
+rm(pam_allspec, pam_raw)
+gc()
 
 # calculate distance to the centroid for species
 ctrd_dists <- as.data.frame(
   dispRity(
-    pca_dat %>% select(-species, -sex), 
+    pca_dat %>% dplyr::select(-species, -sex) %>% as.matrix(), 
     metric = get(metric_get))$disparity[[1]][[1]]
 ) %>% 
   rename(
@@ -105,507 +143,319 @@ ctrd_dists <- as.data.frame(
   )
 rownames(ctrd_dists) <- rownames(pca_dat)
 
+# filter to individual sexes
+ctrd_dists_M <- ctrd_dists[grepl("-M", rownames(ctrd_dists)), , drop = FALSE]
+rownames(ctrd_dists_M) <- sapply(strsplit(rownames(ctrd_dists_M), split = "-"), "[", 1)
+ctrd_dists_F <- ctrd_dists[grepl("-F", rownames(ctrd_dists)), , drop = FALSE]
+rownames(ctrd_dists_F) <- sapply(strsplit(rownames(ctrd_dists_F), split = "-"), "[", 1)
+ctrd_dists_U <- ctrd_dists[grepl("-U", rownames(ctrd_dists)), , drop = FALSE]
+rownames(ctrd_dists_U) <- sapply(strsplit(rownames(ctrd_dists_U), split = "-"), "[", 1)
 
-# let's just look at male specimens, for simplicity
-# filter centroid data to males only
-ctrd_dists <- ctrd_dists %>% 
-  mutate(
-    species = sapply(strsplit(rownames(.), split = "-"), "[", 1),
-    sex = sapply(strsplit(rownames(.), split = "-"), "[", 2)
-  ) %>% 
-  filter(
-    sex == "M"
-  ) %>% 
-  select(
-    -sex
-  )
+# convert to named vectors
+M_names <- rownames(ctrd_dists_M)
+ctrd_dists_M <- ctrd_dists_M$centroid_distance
+names(ctrd_dists_M) <- M_names
+F_names <- rownames(ctrd_dists_F)
+ctrd_dists_F <- ctrd_dists_F$centroid_distance
+names(ctrd_dists_F) <- F_names
+U_names <- rownames(ctrd_dists_U)
+ctrd_dists_U <- ctrd_dists_U$centroid_distance
+names(ctrd_dists_U) <- U_names
+rm(M_names, F_names, U_names)
 
-# left join the centroid distances to the species range data
-ranges_10_ctrds <- ranges_10 %>% 
-  left_join(
-    ctrd_dists,
-    by = join_by(
-      sci_nam == species
-    )
-  ) %>% 
-  st_as_sf()
+# set species richness threshold
+species_richness <- rowSums(pam, na.rm = T)
+# create a mask for cells with species richness >= threshold
+sr_mask <- ifelse(species_richness >= sr_threshold, TRUE, NA)
+# save mask for later use
+saveRDS(sr_mask,file = here::here(
+  "2_Patches", "3_OutputData", "6_Spatial_mapping", pam_res, space,
+  paste(clade, "species_richness_mask", sr_threshold, sep = "_")))
 
-# check the output
-ranges_10_ctrds
-
-# Check if all range maps are valid and make valid if not
-if(!all(st_is_valid(ranges_10_ctrds))) {
-  ranges_10_ctrds <- ranges_10_ctrds %>% 
-    st_make_valid()
-}
-
-## Visualise raw range maps ----
-ggplot() + 
-  geom_sf(data = world, colour = "steelblue") + 
-  geom_sf(data = ranges_10, aes(colour = sci_nam, fill = sci_nam), alpha = 1/3) + 
-  coord_sf(expand = FALSE)
-
-# visualise centroid distances (in individual polygons)
-ggplot() + 
-  geom_sf(data = world, colour = "steelblue") + 
-  geom_sf(data = ranges_10_ctrds, aes(colour = centroid_distance, fill = centroid_distance), alpha = 1/3) + 
-  coord_sf(expand = FALSE)
-
-## Creation of raster ----
-
-# Create a template raster
-template_raster <- rast(
-  extent = ext(-180, 180, -90, 90),
-  resolution = 0.5,
-  crs = crs(ranges_10_ctrds)
-)
-
-# 2 methods to create the raster
-
-## Method 1: directly getting mean of centroid distance ----
-ctrds_rast_direct <- ranges_10_ctrds %>% 
-  vect() %>% 
-  rasterize(
-    template_raster,
-    field = "centroid_distance",
-    fun = "mean"
-  )
-
-# inspect ouput
-ctrds_rast_direct
-
-# and plot
-ggplot() + 
-  geom_spatraster(data = ctrds_rast_direct) +
-  scale_fill_viridis_c(option = "plasma") + 
-  geom_sf(data = world, colour = "darkgrey", fill = NA) + 
-  coord_sf(expand = FALSE)
-
-## Method 2: create raster for each species map individually, then stack and calculate mean centroid distance ----
-
-# get list of unique species in ranges data
-species_10 <- unique(ranges_10$sci_nam)
-
-# initialise empty list to hold individual species rasters
-species_rasters <- vector("list", length = length(species_10))
-names(species_rasters) <- species_10
-
-# iterate over species
-for(i in 1: length(species_10)) {
-  # get species name
-  species <- species_10[i]
-  # get species map
-  species_map <- vect(ranges_10_ctrds[ranges_10_ctrds$sci_nam == species, ])
-  # create raster for species
-  species_raster <- terra::rasterize(
-    species_map,
-    template_raster,
-    field = "centroid_distance",
-    fun = "mean",
-    background = NA
-  )
-  # assign to list of rasters
-  species_rasters[[i]] <- species_raster
+for(sex in sexes){
   
-  # print how far through the list of species the loop is
-  cat("\r", i, " of ", length(species_10), " species rasterised")
+  cat("/r", sex)
+  
+  # get sexed centroid distances
+  ctrd_dists_tmp <- get(paste("ctrd_dists", sex, sep = "_"))
+  
+  # calculate mean distance to centroid per cell
+  # N.B. this can't be parallelised because of RAM limitations
+  mean_distance_per_cell <- apply(pam, 1, function(presence) {
+    species_present <- which(presence == 1)
+    if (length(species_present) > 0) {
+      return(mean(ctrd_dists_tmp[species_present], na.rm = TRUE))
+    } else {
+      return(NA)  # If no species are present in the cell
+    }
+  })
+  
+  # create null raster to populate with values
+  tmp_rast <- terra::rast(null_rast)
+  
+  # assign values to raster based on null raster
+  terra::values(tmp_rast) <- mean_distance_per_cell
+  
+  # assign to sex-specific raster
+  assign(
+    paste("mean_ctrd_dist_rast", sex, sep = "_"),
+    tmp_rast
+  )
+  
+  # apply richness threshold to raster
+  sr_lim_mean_ctrd_dist_rast <- terra::rast(tmp_rast)
+  terra::values(sr_lim_mean_ctrd_dist_rast) <- terra::values(tmp_rast) * sr_mask
+  
+  # assign to sex-specific raster
+  assign(
+    paste("sr_lim_mean_ctrd_dist_rast", sex, sep = "_"),
+    sr_lim_mean_ctrd_dist_rast
+  )
+  
 }
 
-# combine rasters into a single stack
-species_rasters_stack <- rast(species_rasters)
+# combine individual sexed rasters into multilayer raster with a layer for each sex
+if(sex_match == "matchedsex"){
+  mean_ctrd_dist_rast <- c(mean_ctrd_dist_rast_M, mean_ctrd_dist_rast_F)
+  names(mean_ctrd_dist_rast) <-  c(paste0("M_", metric), paste0("F_", metric))
+} else if(sex_match == "allspecimens"){
+  mean_ctrd_dist_rast <- c(mean_ctrd_dist_rast_M, mean_ctrd_dist_rast_F, mean_ctrd_dist_rast_U)
+  names(mean_ctrd_dist_rast) <-  c(paste0("M_", metric), paste0("F_", metric), paste0("U_", metric))
+}
 
-# get the mean centroid distance for each pixel from this raster stack
-ctrds_rast_looped <- app(species_rasters_stack, fun = mean, na.rm = TRUE)
+# explicitly set the CRS to Behrmann Equal Area (Cylindrical Equal Area with a 
+# specific latitude of true scale set at 30°)
+# Use Well Known Text (WKT) obtained from https://spatialreference.org/ref/esri/54017/
+terra::crs(mean_ctrd_dist_rast) <- 'PROJCRS["World_Behrmann",
+    BASEGEOGCRS["WGS 84",
+        DATUM["World Geodetic System 1984",
+            ELLIPSOID["WGS 84",6378137,298.257223563,
+                LENGTHUNIT["metre",1]]],
+        PRIMEM["Greenwich",0,
+            ANGLEUNIT["Degree",0.0174532925199433]]],
+    CONVERSION["World_Behrmann",
+        METHOD["Lambert Cylindrical Equal Area",
+            ID["EPSG",9835]],
+        PARAMETER["Latitude of 1st standard parallel",30,
+            ANGLEUNIT["Degree",0.0174532925199433],
+            ID["EPSG",8823]],
+        PARAMETER["Longitude of natural origin",0,
+            ANGLEUNIT["Degree",0.0174532925199433],
+            ID["EPSG",8802]],
+        PARAMETER["False easting",0,
+            LENGTHUNIT["metre",1],
+            ID["EPSG",8806]],
+        PARAMETER["False northing",0,
+            LENGTHUNIT["metre",1],
+            ID["EPSG",8807]]],
+    CS[Cartesian,2],
+        AXIS["(E)",east,
+            ORDER[1],
+            LENGTHUNIT["metre",1]],
+        AXIS["(N)",north,
+            ORDER[2],
+            LENGTHUNIT["metre",1]],
+    USAGE[
+        SCOPE["Not known."],
+        AREA["World."],
+        BBOX[-90,-180,90,180]],
+    ID["ESRI",54017]]'
 
-# inspect output
-ctrds_rast_looped
+# save the raster (version without SR threshold applied)
+rast_filename <- paste(clade, "patches", space, sex_match, metric, pam_res, "Behrman", pam_type, pam_seas, "raster.tif", sep = ".")
+terra::writeRaster(
+  mean_ctrd_dist_rast,
+  filename = here::here(
+    "2_Patches", "3_OutputData", "6_Spatial_mapping", pam_res, space,
+    rast_filename
+  )
+)
 
-# plot
-ggplot() + 
-  geom_spatraster(data = ctrds_rast_looped) +
-  scale_fill_viridis_c(option = "plasma") + 
-  geom_sf(data = world, colour = "darkgrey", fill = NA) + 
-  coord_sf(expand = FALSE)
+# Plotting ----
+
+# remove unnecessary variables
+rm(list=setdiff(ls(), c("clade", "space", "sex_match", "metric", "pam_res", "pam_type", "pam_seas", "sr_threshold")))
+gc()
 
 
-#----------------------------------------------------------------------------------------------------------------------#
-## Code to produce the species_10_ranges file ----
-
-## Load all-species range map data
-
-# Check layers in range map data
-st_layers(
+# load raster 
+rast_filename <- paste(clade, "patches", space, sex_match, metric, pam_res, "Behrman", pam_type, pam_seas, "raster.tif", sep = ".")
+div_raster <- terra::rast(
   here::here(
-    "4_SharedInputData", "BirdLife_dist_maps_2022.2", "data.gdb"
+    "2_Patches", "3_OutputData", "6_Spatial_mapping", pam_res, space,
+    rast_filename
   )
 )
 
-# Read in range map layer
-birdlife_range_maps <- st_read(
-  dsn = here::here(
-    "4_SharedInputData", "BirdLife_dist_maps_2022.2", "data.gdb"
-  ),
-  layer = "All_Species"
-)
-
-## Data munging 
-## Note that prior to this step, taxonomy clashes must be resolved
-
-# Extract PCA co-ordinates data and add species and sex columns
-pca_dat <- pca_all$x %>% 
-  as.data.frame() %>% 
-  mutate(
-    species = sapply(strsplit(rownames(.), split = "-"), "[", 1),
-    sex = sapply(strsplit(rownames(.), split = "-"), "[", 2)
-  )
-
-# Get species names separated by _ in range data
-# Filter range data to  species’ breeding geographic ranges only (seasonal, 1 or 2) and regions where species are known 
-# to be native or reintroduced (origin, 1 or 2) and extant or probably extant (presence, 1 or 2) - after
-# Cooney et al (2022) - and trim to species for which we have colour data
-all_species_ranges <- birdlife_range_maps %>% 
-  mutate(
-    sci_name = stringr::str_replace_all(sci_name, " ", "_")
-  ) %>% 
-  filter(
-    seasonal == 1 | seasonal == 2,
-    origin == 1 | origin == 2,
-    presence == 1 | presence == 2,
-  ) %>% 
-  semi_join(
-    pca_dat,
-    by = join_by(sci_name == species)
-  ) %>% 
-  rename(
-    geometry = Shape
-  )
-
-# Filter PCA data to remove species which don't have range maps
-pca_dat <- pca_dat %>% 
-  semi_join(
-    all_species_ranges,
-    by = join_by(species == sci_name)
-  )
-
-# Count remaining species (for which we have both colour data and range maps)
-pca_dat %>% 
-  summarise(
-    species = n_distinct(species)
-  )
-
-# choose species
-species_10 <- c("Accipiter_brevipes", "Larus_bulleri", "Rhynchopsitta_pachyrhyncha", "Chelictinia_riocourii",
-                "Cyclopsitta_diophthalma", "Garrulus_glandarius", "Porphyrio_porphyrio", "Haematopus_finschi",
-                "Falco_jugger", "Melospiza_lincolnii")
-
-# get 10 species' ranges in WGS 84 CRS
-ranges_10 <- all_species_ranges %>% 
-  filter(
-    sci_name == species_10[1] |
-      sci_name == species_10[2] |
-      sci_name == species_10[3] |
-      sci_name == species_10[4] |
-      sci_name == species_10[5] |
-      sci_name == species_10[6] |
-      sci_name == species_10[7] |
-      sci_name == species_10[8] |
-      sci_name == species_10[9] |
-      sci_name == species_10[10]
-  ) %>% 
-  select(
-    sisid, sci_name, presence, origin, seasonal, dist_comm, generalisd, yrmodified, version, 
-    Shape_Length, Shape_Area, geometry
-  ) %>% 
-  st_as_sf() %>% 
-  st_transform(crs = crs(world))
-
-# inspect range data
-ranges_10
-
-# save as shape file
-sf::st_write(
-  ranges_10,
-  here::here(
-    "4_SharedInputData", "BirdLife_dist_maps_2022.2", "ranges_10", "ranges_10_species.shp"
-  )
-)
-
-#----------------------------------------------------------------------------------------------------------------------#
-## Apply rasterisation to all species in range map data ----
-## Note that this will take an extremely long time to run
-
-## Get directory path (on local machine for speed)
-# set path
-dir_botw <- "C:/Users/bop23rxm/Documents/BirdLife_dist_maps_2023_1/BOTW.gdb"
-
-# Check layers in range map data
-st_layers(
-  dir_botw
-)
-
-# Read in range map layer
-birdlife_range_maps <- st_read(
-  dsn = dir_botw,
-  layer = "All_Species"
-)
-
-# get world map (for plotting and for CRS)
+# get world map (for plotting)
 world <- rnaturalearth::ne_countries(returnclass = "sf")
+world <- sf::st_transform(world, crs = terra::crs(div_raster))
 
-# Load PCA data
-pca_all <- readr::read_rds(
+# apply species richness cutoff, if required
+# load mask for cells with species richness >= threshold
+sr_mask <- readRDS(
   here::here(
-    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "Neoaves.patches.231030.PCAcolspaces.jndxyzlumr.240404.rds"
-  )
-)
-
-## Munging ----
-## Note that prior to this step, taxonomy clashes must be resolved
-
-# Extract PCA co-ordinates data and add species and sex columns
-pca_dat <- pca_all$x %>% 
-  as.data.frame() %>% 
-  mutate(
-    species = sapply(strsplit(rownames(.), split = "-"), "[", 1),
-    sex = sapply(strsplit(rownames(.), split = "-"), "[", 2)
-  )
-
-# calculate distance to the centroid for species
-ctrd_dists <- as.data.frame(
-  dispRity::dispRity(
-    pca_dat %>% select(-species, -sex), 
-    metric = dispRity::centroids)$disparity[[1]][[1]]
-) %>% 
-  rename(
-    centroid_distance = V1
-  )
-rownames(ctrd_dists) <- rownames(pca_dat)
-
-# Get species names separated by _ in range data
-# Filter range data to  species’ breeding geographic ranges only (seasonal, 1 or 2) and regions where species are known 
-# to be native or reintroduced (origin, 1 or 2) and extant or probably extant (presence, 1 or 2) - after
-# Cooney et al (2022) - and trim to species for which we have colour data
-all_species_ranges <- birdlife_range_maps %>% 
-  mutate(
-    sci_name = stringr::str_replace_all(sci_name, " ", "_")
-  ) %>% 
-  filter(
-    seasonal == 1 | seasonal == 2,
-    origin == 1 | origin == 2,
-    presence == 1 | presence == 2,
-  ) %>% 
-  semi_join(
-    pca_dat,
-    by = join_by(sci_name == species)
-  ) %>% 
-  rename(
-    geometry = Shape
-  )
-
-# filter centroid data to males only
-ctrd_dists <- ctrd_dists %>% 
-  mutate(
-    species = sapply(strsplit(rownames(.), split = "-"), "[", 1),
-    sex = sapply(strsplit(rownames(.), split = "-"), "[", 2)
-  ) %>% 
-  filter(
-    sex == "M"
-  ) %>% 
-  select(
-    -sex
-  )
-
-# left join the centroid distances to the species range data
-all_species_ranges <- all_species_ranges %>% 
-  left_join(
-    ctrd_dists,
-    by = join_by(
-      sci_name == species
+    "2_Patches", "3_OutputData", "6_Spatial_mapping", pam_res, space,
+    paste(clade, "species_richness_mask", sr_threshold, sep = "_")
     )
-  ) %>% 
-  st_as_sf()
+)
+# apply richness threshold to raster
+sr_lim_div_raster <- terra::rast(div_raster)
+terra::values(sr_lim_div_raster) <- terra::values(div_raster) * sr_mask
 
-# check the output
-all_species_ranges
+# generate quantiles for colour scale plotting purposes
+# first examine the histograms
+# males and females
+hist(terra::values(sr_lim_div_raster), breaks = 50)
+x_lim <- c(min(terra::values(sr_lim_div_raster), na.rm = T), max(terra::values(sr_lim_div_raster), na.rm = T))
+# males only
+hist(terra::values(sr_lim_div_raster[[1]]), breaks = 50, xlim = x_lim)
+# females only
+hist(terra::values(sr_lim_div_raster[[2]]), breaks = 50, xlim = x_lim)
 
-# Check if all range maps are valid and make valid if not
-if(!all(st_is_valid(all_species_ranges))) {
-  all_species_ranges <- all_species_ranges %>% 
-    st_make_valid()
+# set up breaks as quantiles (specify number of quantiles)
+nquants <- 10
+quants <- quantile(terra::values(sr_lim_div_raster), na.rm = TRUE, probs = seq(0, 1, by = 1/nquants))
+names(quants) <- round(quants, digits = 1)
+
+
+## Plot with continuous or binned scale?
+col_scale <- "binned"
+
+# plot the raster
+p <- ggplot() + 
+  geom_spatraster(data = sr_lim_div_raster) + 
+  coord_sf(expand = FALSE) + 
+  facet_wrap(~ lyr, ncol = 1)
+
+# add colour scale (binned or continuous)
+if(col_scale == "continuous"){
+  p <- p + scale_fill_viridis_c(option = "turbo")
+} else if(col_scale == "binned"){
+  p <- p + scale_fill_binned(breaks = quants,
+                    type = "viridis")
 }
 
-# remove the original file from environment (to free up RAM)
-rm(birdlife_range_maps)
+# show in plot viewer
+p
 
-## Convert MULTISURFACE-type geometries to MULTIPOLYGON ----
-# Some species range maps are of multisurface-type geometry in the BOTW data
-# This type of geometry cannot be converted to a SpatVector and so cannot be rasterised using terra::rasterize
-# For this reason need to convert these geometries to multipolygons like the other geometries
-# Need to use ogr2ogr facility in GDAL (install with conda forge)
-# see https://stackoverflow.com/questions/74479973/casting-from-geomoetrycollection-with-multiple-nested-geometries-r-sf
 
-# get only the MULTISURFACE range maps
-multisurface_ranges <- all_species_ranges[!grepl("MULTISURFACE", st_geometry_type(all_species_ranges)), ]
 
-# input and output locations
-input_loc <- "C:/Users/bop23rxm/Documents/BirdLife_dist_maps_2023_1/all_species_ranges_with_ctrds_male_WGS_84.gpkg"
-output_loc <- "C:/Users/bop23rxm/Documents/BirdLife_dist_maps_2023_1/all_species_ranges_with_ctrds_male_WGS_84_multisurf_recast.gpkg"
-
-# save to .gpkg file
-# see https://mapping-in-r-workshop.ryanpeek.org/02_import_export_gpkg#:~:text=Write%20TO%20geopackage,-Now%20we%20have&text=Just%20as%20we%20have%20been,dsn%3D%22data%2Fgpkg_in_R_example.
-
-st_write(
-  multisurface_ranges,
-  dsn = output_loc,
-  layer = "multisurface_ranges"
+# save image as png
+png_filename <- paste(clade, "patches", space, sex_match, metric, "sr_thresh", sr_threshold, pam_res, col_scale, "colscale", "Behrman", pam_type, pam_seas, "png", sep = ".")
+png(
+  here::here(
+    "2_Patches", "4_OutputPlots", "3_Spatial_mapping", pam_res, space,
+   png_filename
+  ), 
+  width = 420, height = 420, units = "mm", pointsize = 24, res = 100
 )
-
-##--NOT RUN - need to do this via Miniforge Prompt command line (see below)------------------------#
-# cast to polygon using ogr2ogr (via system command)
-# ogr2ogr_loc <- "C:/Users/bop23rxm/AppData/Local/miniforge3/pkgs/libgdal-3.9.0-h4f813f3_3/Library/bin/ogr2ogr.exe"
-
-# system(
-#   paste0(
-#     ogr2ogr_loc, " ",
-#     output_loc, " ",
-#     input_loc, " ",
-#     "-explodecollections -nlt CONVERT_TO_LINEAR"
-#   )
-# )
-##-------------------------------------------------------------------------------------#
+p
+dev.off()
 
 
+# Base R version (for binned with rainbow colour scale)
 
-## Miniforge Prompt command to recast multisurface geometries (substitute [input_loc] and [output_loc] for the actual 
-## locations:
-## C:\> ogr2ogr [output_loc] [input_loc] -explodecollections -nlt MULTIPOLYGON
-## 
-# note that this splits the complex multisurfaces up into many smaller multipolygons (like, thousands of them)
-# so I might want to consider actually using "CONVERT_TO_LINEAR" in the command prompt instead of "MULTIPOLYGON" -
-# I think this would simplify it a lot without losing info
-# See https://gdal.org/programs/ogr2ogr.html
+## Use viridis turbo palette or custom colour palette?
+palette_choice <- "custom"
 
+# get unified range
+minval <- min(terra::values(sr_lim_div_raster), na.rm = TRUE)
+maxval <- max(terra::values(sr_lim_div_raster), na.rm = TRUE)
+nquants <- 15
+quants <- quantile(terra::values(sr_lim_div_raster), na.rm = TRUE, probs = seq(0, 1, by = 1/nquants))
 
-# inspect layers in newly created object
-st_layers(
-  output_loc
-)
-
-# read in newly created file as sf object (rename geom column 'geometry' to match original data (for some reason the ogr2ogr command changes it to 'geom'))
-multisurf_ranges_recast <- st_read(
-  dsn = output_loc,
-  layer = "multisurface_ranges"
-) %>% 
-  rename(
-    geometry = geom
-  )
-
-# inspect
-multisurf_ranges_recast
-
-
-# combine new recast ranges with original ranges (avoiding duplicates)
-all_species_ranges_recast <- rbind(
-  all_species_ranges[!grepl("MULTISURFACE", st_geometry_type(all_species_ranges)), ],
-  multisurf_ranges_recast
-)
-
-
-
-# save this as new .gpkg file
-st_write(
-  all_species_ranges_recast,
-  dsn = "C:/Users/bop23rxm/Documents/BirdLife_dist_maps_2023_1/all_species_ranges_with_ctrds_male_WGS_84_for_analysis.gpkg",
-  layer = "multisurface_ranges"
-)
-
-# remove variables from environment
-rm(multisurface_ranges, multisurf_ranges_recast, command, input_loc, output_loc)
-
-## Creation of raster ----
-
-# Create a template raster
-template_raster <- rast(
-  extent = ext(-180, 180, -90, 90),
-  resolution = 0.5,
-  crs = crs(all_species_ranges)
-)
-
-## create raster for each species map individually, then stack and calculate mean centroid distance
-
-# get list of unique species in ranges data
-species_list <- unique(all_species_ranges$sci_name)
-
-# initialise empty list to hold individual species rasters
-species_rasters <- vector("list", length = length(species_list))
-names(species_rasters) <- species_list
-
-# iterate over species
-for(i in 5545 : length(species_list)) {
-  # get species name
-  species <- species_list[i]
-  # get species map
-  species_map <- vect(all_species_ranges_recast[all_species_ranges_recast$sci_name == species, ])
-  # create raster for species
-  species_raster <- terra::rasterize(
-    species_map,
-    template_raster,
-    field = "centroid_distance",
-    fun = "mean",
-    background = NA
-  )
-  
-  # save individual species raster (for sanity)
-  savepath <- paste0("C:/Users/bop23rxm/Documents/birdlife_centroid_distance_rasters_individual/", 
-                     species, "_M_centr_dist_raster.tif")
-  terra::writeRaster(species_raster, savepath, overwrite = TRUE, memfrac = 0.85)
-  
-  # assign to list of rasters
-  species_rasters[[species]] <- species_raster
-  
-  # print how far through the list of species the loop is
-  cat("\r", i, " of ", length(species_list), " species rasterised")
+if(palette_choice == "turbo"){
+  colpal <- viridisLite::turbo(nquants)
+} else if(palette_choice == "custom"){
+  # create own colour palette (based on Cooney et al (2022) Fig. 2)
+  cols <- c("#3e9eb5ff", "#eacc2cff", "#f82202ff")
+  colpal <- colorRampPalette(cols)(nquants)
 }
 
-# read in individual species rasters from files
-# (we won't bother naming the elements as we're going to combine in a single stack)
-species_rasters <- vector("list", length = length(species_list))
-files <- list.files("C:/Users/bop23rxm/Documents/birdlife_centroid_distance_rasters_individual", full.names = TRUE)
-for(i in 1:length(files)){
-  species_rasters[[i]] <- terra::rast(
-    files[i]
-  )
-  cat("\r", i)
-}
-
-# combine rasters into a single stack
-species_rasters_stack <- rast(species_rasters)
-
-# get the mean centroid distance for each pixel from this raster stack
-mean_ctrds_rast <- app(species_rasters_stack, fun = mean, na.rm = TRUE)
-
-mean_ctrds_rast <- mean(species_rasters_stack, na.rm = TRUE)
-
-# save this final raster file
-terra::writeRaster(mean_ctrds_rast, 
-                   here::here(
-                     "2_Patches", "3_OutputData", "6_Spatial_data", "jndxyzlumr_allspecies_M_mean_centr_dist_raster.tif"
-                   ), 
-                   overwrite = TRUE)
-
-# Plot ----
-ggplot() + 
-  geom_spatraster(data = log(mean_ctrds_rast)) +
-  scale_fill_viridis_c(option = "plasma") + 
-  geom_sf(data = world, colour = "darkgrey", fill = NA) + 
-  coord_sf(expand = FALSE)
-
-# try clipping raster to extent of world - may make terrestrial trends easier to see
-mean_ctrds_rast_terr <- terra::crop(mean_ctrds_rast, world, mask = TRUE)
 
 # plot
+png_filename <- paste(clade, "patches", space, sex_match, metric, "sr_thresh", sr_threshold, pam_res, "binnedturbo", "colscale", "Behrman", pam_type, pam_seas, "png", sep = ".")
+png(
+  here::here(
+    "2_Patches", "4_OutputPlots", "3_Spatial_mapping", pam_res, space,
+    png_filename
+  ), 
+  width = 420, height = 320, units = "mm", pointsize = 24, res = 100
+)
+par(mfrow = c(2, 1))
+terra::plot(
+  sr_lim_div_raster, "M_centr-dist", 
+  breaks = quants, 
+  col = colpal, 
+  colNA = "grey",
+  legend = TRUE,
+  plg = list(title = "Mean distance \n to centroid"),
+  mar = c(2, 2, 2, 8)
+  )
+terra::plot(
+  sr_lim_div_raster, "F_centr-dist", 
+  breaks = quants, 
+  col = colpal, 
+  colNA = "grey",
+  legend = FALSE,
+  mar = c(2, 2, 2, 8)
+  )
+dev.off() 
+
+# other (non-working) colour scale options
 ggplot() + 
-  geom_spatraster(data = log(mean_ctrds_rast_terr)) +
-  scale_fill_viridis_c(option = "plasma") + 
-  geom_sf(data = world, colour = "darkgrey", fill = NA) + 
-  coord_sf(expand = FALSE)
+  geom_spatraster(data = sr_lim_div_raster) + 
+  ## this scale works but it doesn't bin the palette equally
+  ## I need to find a way to define my own colour palette to use
+  # scale_fill_whitebox_b(
+  #   breaks = quants,
+  #   labels = names(quants),
+  #   palette = "viridi"
+  # ) +
+  ## This one doesn't work at all - it has no effect
+  # binned_scale(
+  #   aesthetics = "color",
+  #   scale_name = "stepsn",
+  #   palette = function(x) viridisLite::turbo(nquants),
+  #   labels = names(quants),
+  #   limits = c(min(terra::values(sr_lim_div_raster), na.rm = TRUE), max(terra::values(sr_lim_div_raster), na.rm = TRUE)),
+  #   breaks = quants,
+  #   show.limits = TRUE,
+  #   guide = "colorsteps"
+  # ) + 
+  ## WORKING SCALE _ DISCRETE 
+  ## This works but I can't work out how to pass a turbo colour palette to it
+  ## Need to pass it to the 'type' argument I think, but it might not actually
+  ## be possible
+  scale_fill_binned(breaks = quants,
+                    type = "viridis") + 
+  #      type = getOption("ggplot2.binned.fill")) +
+  #  geom_sf(data = world, colour = "steelblue", fill = NA) + 
+  coord_sf(expand = FALSE) + 
+  facet_wrap(~ lyr, ncol = 1)
+
+
+# Downstream analysis ----
+
+# read in raster
+rast_filename <- paste(clade, "patches", space, metric, pam_res, "Behrman", pam_type, pam_seas, "raster.tif", sep = ".")
+div_raster <- terra::rast(
+  here::here(
+    "2_Patches", "3_OutputData", "6_Spatial_mapping", pam_res, space,
+    rast_filename
+  )
+)
+
+# get CRS
+crs <- div_raster %>% 
+  raster::crs() %>% 
+  as.character()
+
+# read in Dinerstein et al 2017 ecoregion shape files
+sf::st_read(
+  here::here(
+    "4_SharedInputData", "Ecoregions2017_accessed2024-10-07",
+    "Ecoregions2017.shp"
+  )
+)
