@@ -22,10 +22,10 @@ source(
 )
 
 ## EDITABLE CODE ##
-# select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr", "lab")
+# select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
-space <- "jndxyzlum"
+space <- "usml"
 # select sex ("M", "F", "All")
 sex <- "All"
 # select metric ("centr-dist", "nn-k", "nn-count")
@@ -34,6 +34,14 @@ sex <- "All"
 metric <- "centr-dist"
 # select number of null distributions to generate
 n_sims <- 1000
+# select whther to use liberal, conservative, or nominate IUCN data
+# "liberal" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
+# are assigned the highest threat level of the multiple species
+# "conservative" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
+# are assigned the lowest threat level of the multiple species
+# "nominate" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
+# are assigned the threat level of the BL species that corresponds to the nominate subspecies
+iucn_type <- "nominate"
 ## END EDITABLE CODE ##
 
 # Load data ----
@@ -48,9 +56,10 @@ pca_all <- readRDS(
 )
 
 # load IUCN Red List data
-iucn <- readr::read_rds(
+iucn_filename <- paste("iucn_2024", iucn_type, ".csv")
+iucn <- read.csv(
   here::here(
-    "4_SharedInputData", "IUCN_RedList_data_130324.rds"
+    "4_SharedInputData", "iucn_2024_conservative.csv"
   )
 )
 
@@ -76,17 +85,17 @@ trait <- pca_all %>%
 
 # Species matched to IUCN categories:
 species <- iucn %>% 
-  mutate(
-    species = gsub(" ", "_", scientific_name)
+  rename(
+    species = species_birdtree
   ) %>% 
   select(
-    species, category
+    species, iucn_cat
   ) %>% 
   filter(
     species %in% trait[, "species"]
   )
 
-# remove species not in IUCN data
+# remove species not in IUCN data (now unnecessary since I've crossmatched the iucn data)
 trait <- trait[trait[, "species"] %in% species[, "species"], ]
 
 # check species are identical in both matrices
@@ -141,7 +150,7 @@ trait_vec <- matrix(traits[all,], ncol=dim(traits)[2])
 res[1,2] <- length(all)
 res[1,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
 
-noCR <- rownames(species)[species$category != "CR"]
+noCR <- rownames(species)[species$iucn_cat != "CR"]
 # extract traits for species in the random community
 trait_vec <- matrix(traits[noCR,], ncol=dim(traits)[2])
 # calculate SR & Mean distance to centroid
@@ -163,7 +172,7 @@ res[2,4] <- mean(sims)
 res[2,5] <- sd(sims)
 res[2,6] <- sd(sims)/sqrt(length(sims))
 
-noEN <- rownames(species)[species$category != "CR" & species$category != "EN"]
+noEN <- rownames(species)[species$iucn_cat != "CR" & species$iucn_cat != "EN"]
 # extract traits for species in the random community
 trait_vec <- matrix(traits[noEN,], ncol=dim(traits)[2])
 # calculate SR & Mean distance to centroid
@@ -186,7 +195,7 @@ res[3,4] <- mean(sims)
 res[3,5] <- sd(sims)
 res[3,6] <- sd(sims)/sqrt(length(sims))
 
-noVU <- rownames(species)[species$category != "CR" & species$category != "EN" & species$category != "VU"]
+noVU <- rownames(species)[species$iucn_cat != "CR" & species$iucn_cat != "EN" & species$iucn_cat != "VU"]
 # extract traits for species in the random community
 trait_vec <- matrix(traits[noVU,], ncol=dim(traits)[2])
 # calculate SR & Mean distance to centroid
@@ -208,7 +217,7 @@ res[4,4] <- mean(sims)
 res[4,5] <- sd(sims)
 res[4,6] <- sd(sims)/sqrt(length(sims))
 
-noNT <- rownames(species)[species$category != "CR" & species$category != "EN" & species$category != "VU" & species$category != "NT"]
+noNT <- rownames(species)[species$iucn_cat != "CR" & species$iucn_cat != "EN" & species$iucn_cat != "VU" & species$iucn_cat != "NT"]
 # extract traits for species in the random community
 trait_vec <- matrix(traits[noNT,], ncol=dim(traits)[2])
 # calculate SR & Mean distance to centroid
