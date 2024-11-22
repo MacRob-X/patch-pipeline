@@ -195,7 +195,7 @@ plot.FourPix <- function(obj1, obj2, obj3, obj4, filepath, asp = T){
 
 
 # Plot four basic patch plots together
-plot.FourPatch <- function(obj1, obj2, obj3, obj4, filepath = NULL, asp = T){
+plot.FourPatch <- function(obj1, obj2, obj3, obj4, filepath = NULL, asp = T, taxonCol = NULL){
   
   # Initialise png saving if requested
   if(!is.null(filepath)){
@@ -225,6 +225,15 @@ plot.FourPatch <- function(obj1, obj2, obj3, obj4, filepath = NULL, asp = T){
       ylabel <- colnames(obj)[2]
     }
     
+    # Set colour mapping for taxon subgroups
+    if(taxonCol == TRUE){
+      cols <- rainbow(length(levels(as.factor(obj1$taxon_subgroup))))
+      col_mapping <- cols[match(obj1$taxon_subgroup, levels(as.factor(obj1$taxon_subgroup)))]
+    }
+    else {
+      col_mapping <- c(rep("black", times = length(obj[,1])))
+    }
+    
     # Create plot
     # If asp not selected, set x and y axis limits and plot blank canvas
     if(asp != T){
@@ -234,14 +243,18 @@ plot.FourPatch <- function(obj1, obj2, obj3, obj4, filepath = NULL, asp = T){
       # Plot
       plot(obj[,2] ~ obj[,1], 
            xlim = xlimit, ylim = ylimit,
-           xlab = xlabel, ylab = ylabel, las = 1); box(lwd=2)
+           xlab = xlabel, ylab = ylabel, 
+           las = 1,
+           col = col_mapping); box(lwd=2)
     }
     # if asp selected, plotwith asp = T (aspect ratio fixed so x and y axis have same scale
     # - this makes the bird pngs the correct shape plus is standard for plotting PCAs etc)
     else if(asp == T){
       plot(obj[,2] ~ obj[,1],
            asp = T,
-           xlab = xlabel, ylab = ylabel, las = 1); box(lwd=2)
+           xlab = xlabel, ylab = ylabel, 
+           las = 1,
+           col = col_mapping); box(lwd=2)
     }
   }
   
@@ -250,3 +263,5 @@ plot.FourPatch <- function(obj1, obj2, obj3, obj4, filepath = NULL, asp = T){
     dev.off()
   }
 }
+
+
