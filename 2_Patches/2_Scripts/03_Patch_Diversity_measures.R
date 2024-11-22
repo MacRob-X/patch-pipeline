@@ -25,7 +25,7 @@ springfield <- c(HomerYellow = "#FED439", FrinkPink = "#FD8CC1", HomerBlue = "#7
 # E.g. "Abeillia_abeillei-F"
 # Takes as IUCN input the dataframe created by the code in IUCN_API.R
 
-match_iucn <- function(colour_data, iucn_data, sex = "all"){
+match_iucn <- function(colourData, iucn_data){
   
   # check if IUCN data contains necessary columns
   if(!("scientific_name" %in% colnames(iucn_data))){
@@ -36,66 +36,46 @@ match_iucn <- function(colour_data, iucn_data, sex = "all"){
   iucn_data$species <- gsub(" ", "_", iucn_data$scientific_name)   # note that I'll need to sort out the taxonomy before I do this for real
   iucn_data$specimen <- c(rep(NA, times = length(iucn_data$species)))
   
-  if(sex == "F"){
-    
-    # get female specimen IUCN data
-    fem_iucn <- iucn_data[paste0(iucn_data$species, "-F") %in% rownames(colour_data), ]
-    fem_iucn$specimen <- paste0(fem_iucn$species, "-F")
-    
-    # assign to dataframe
-    iucn_match <- fem_iucn
-    
-  } else if (sex == "M") {
-    
-    # get male specimen IUCN data
-    male_iucn <- iucn_data[paste0(iucn_data$species, "-M") %in% rownames(colour_data), ]
-    male_iucn$specimen <- paste0(male_iucn$species, "-M")
-    
-    # assign to dataframe
-    iucn_match <- male_iucn
-    
-  } else if (sex == "all") {
-    
-    # get female specimen IUCN data
-    fem_iucn <- iucn_data[paste0(iucn_data$species, "-F") %in% rownames(colour_data), ]
-    fem_iucn$specimen <- paste0(fem_iucn$species, "-F")
-    
-    # get male specimen IUCN data
-    male_iucn <- iucn_data[paste0(iucn_data$species, "-M") %in% rownames(colour_data), ]
-    male_iucn$specimen <- paste0(male_iucn$species, "-M")
-    
-    # get unknown sex specimen IUCN data
-    unk_iucn <- iucn_data[paste0(iucn_data$species, "-U") %in% rownames(colour_data), ]
-    unk_iucn$specimen <- paste0(unk_iucn$species, "-U")
-    
-    # concatenate into one big dataframe with specimen names that match colour_data rownames
-    iucn_match <- rbind(fem_iucn, male_iucn, unk_iucn)
-  }
-
+  # get female specimen IUCN data
+  femIUCN <- iucn_data[paste0(iucn_data$species, "-F") %in% rownames(colourData), ]
+  femIUCN$specimen <- paste0(femIUCN$species, "-F")
+  
+  # get male specimen IUCN data
+  maleIUCN <- iucn_data[paste0(iucn_data$species, "-M") %in% rownames(colourData), ]
+  maleIUCN$specimen <- paste0(maleIUCN$species, "-M")
+  
+  # get unknown sex specimen IUCN data
+  unkIUCN <- iucn_data[paste0(iucn_data$species, "-U") %in% rownames(colourData), ]
+  unkIUCN$specimen <- paste0(unkIUCN$species, "-U")
+  
+  # concatenate into one big dataframe with specimen names that match colourData rownames
+  iucnMatch <- rbind(femIUCN, maleIUCN, unkIUCN)
+  
   # trim species categorised as DD, EX, EW, or CR(PE) (after Hughes et al 2022)
-  levels(as.factor(iucn_match$category))
-  iucn_match <- iucn_match[iucn_match$category != "DD" & iucn_match$category != "EX" & iucn_match$category != "EW" & iucn_match$category != "CR(PE)", ]
-  levels(as.factor(iucn_match$category))
+  levels(as.factor(iucnMatch$category))
+  iucnMatch <- iucnMatch[iucnMatch$category != "DD" & iucnMatch$category != "EX" & iucnMatch$category != "EW" & iucnMatch$category != "CR(PE)", ]
+  levels(as.factor(iucnMatch$category))
   
   # remove species not present in IUCN data
-  colour_data <- colour_data[rownames(colour_data) %in% iucn_match$specimen,]
+  colourData <- colourData[rownames(colourData) %in% iucnMatch$specimen,]
   
-  # reorder IUCN data to match colour_data
-  iucn_match <- iucn_match[match(rownames(colour_data), iucn_match$specimen), ]
+  # reorder IUCN data to match colourData
+  iucnMatch <- iucnMatch[match(rownames(colourData), iucnMatch$specimen), ]
   
   # Check all specimens match between the two datasets
-  if(identical(iucn_match$specimen, rownames(colour_data))){
+  if(identical(iucnMatch$specimen, rownames(colourData))){
     print("All specimens in IUCN and colour data matched")
   }
   
-  matched_data <- list(iucn_match, colour_data)
+  matched_data <- list(iucnMatch, colourData)
   
   return(matched_data)
   
 }
 
-# dispRity-style function to calculate mean distance to given number of nearest neighbours
-mean.nn.dist <- function(matrix, nn = NULL, method = "euclidean") {
+# dispRity-style function to calculate mean distance to given number of nearest neighbours - without removing
+# duplicate same-species-different-sex pairs
+mean.nn.dist.obsolete <- function(matrix, nn = NULL, method = "euclidean") {
   
   ## Set number of neighbours to all if not specified
   if(is.null(nn)){
@@ -111,6 +91,75 @@ mean.nn.dist <- function(matrix, nn = NULL, method = "euclidean") {
   ## Return values
   return(mean.nn.dists)
 }
+
+# dispRity-style function to calculate mean distance to given number of nearest neighbours - WITH removal of
+# duplicate same-species-different-sex pairs
+
+mean.nn.dist <- function(matrix, rownames = NULL, nn = NULL, method = "euclidean") {
+  
+  ## Set number of neighbours to all if not specified
+  if(is.null(nn)){
+    nn <- nrow(matrix)
+  }
+  
+  ## Set matrix rownames if specified
+  if(!is.null(rownames)){
+    rownames(matrix) <- rownames
+  }
+  
+  ## Calculate all pairwise distances
+  pair.dists <- as.matrix(vegan::vegdist(matrix, method = method))
+  
+  ## Function to calculate nn closest for a single point
+  nn_point <- function(one.row, nn, row.index){
+    
+    # if no species/sex provided just calculate the basic mean nearest neighbour distance
+    if(is.null(names(one.row))){
+      nn_point_dists <- mean(sort(one.row)[2:(nn + 1)])
+    }
+    
+    # if species/sex provided, check if more than one instance of same species is in the n nearest neighbours and ignore if so
+    else {
+      species <- strsplit(names(one.row)[row.index], split = "-")[[1]][1]
+      nn_names <- names(sort(one.row)[2:(nn + 1)])
+      nn_species <- sapply(strsplit(nn_names, split = "-"), "[", 1)
+      # check if same species is nn
+      if(any(grepl(species, nn_species))){
+        # get position of same species (this will include the specimen of interest)
+        pos <- grep(species, names(one.row))
+        # get values for these positions (one will be zero - the specimen of interest)
+        pos_vals <- one.row[pos]
+        names(pos_vals) <- as.character(pos)
+        # get position of non-zero same-species specimen (i.e. the opposite sex)
+        pos <- as.numeric(names(pos_vals[pos_vals != 0]))
+        # set the value for the same species equal to NA
+        one.row[pos] <- NA
+        # calculate knn mean, removing NAs
+        nn_point_dists <- mean(sort(one.row)[2:(nn + 1)], na.rm = TRUE)
+        #  nn_point_dists <- mean(c(sort(one.row[2:(pos - 1)]), sort(one.row[(pos + 1):(nn + 2)])))
+      }
+      else{
+        nn_point_dists <- mean(sort(one.row)[2:(nn + 1)])
+      }
+    }
+    return(nn_point_dists)
+  }
+  
+  # create wrapper function to preserve element names when passing each row to nn_point
+  wrapper_function <- function(row.index, matrix, nn) {
+    row <- matrix[row.index, ]
+    nn_point(row, nn, row.index)
+  }
+  
+  ## Get nn closest for each point
+  # mean.nn.dists <- apply(pair.dists, 1, nn_point, nn = nn)
+  mean.nn.dists <- sapply(seq_len(nrow(pair.dists)), wrapper_function, matrix = pair.dists, nn = nn)
+  
+  
+  ## Return values
+  return(mean.nn.dists)
+}
+
 
 # dispRity-style function to count number of neighbours within a given radius (written by Thomas Guillerme)
 count.neighbours <- function(matrix, radius = 1, relative = TRUE, method = "euclidean") {
@@ -130,6 +179,7 @@ count.neighbours <- function(matrix, radius = 1, relative = TRUE, method = "eucl
   }
 }
 
+
 #-----------------------------------------------------------------------------------------#
 
 # Load and prepare data ----
@@ -138,15 +188,15 @@ count.neighbours <- function(matrix, radius = 1, relative = TRUE, method = "eucl
 pca_all <- readr::read_rds(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
-    "Neoaves.patches.231030.PCAcolspaces.jndxyzlumr.240603.rds"
+    "Neoaves.patches.231030.PCAcolspaces.jndxyzlum.240603.rds"
   )
 )
 
 # load umap patch data (output from 02b_Patch_Umap_iterations.R)
-umap_jndxyzlumr <- readr::read_rds(
+umap_jndxyzlum <- readr::read_rds(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
-    "Neoaves.patches.pca.jndxyzlumr.UMAPs.iterations.240603.rds"
+    "Neoaves.patches.pca.jndxyzlum.UMAPs.iterations.240603.rds"
   )
 ) %>% 
   magrittr::extract2(1) %>% 
@@ -175,7 +225,7 @@ iucn <- readr::read_rds(
 pca_dat <- pca_all$x
 
 # match iucn and PCA data
-matched_data <- match_iucn(pca_dat, iucn, sex = "all")
+matched_data <- match_iucn(pca_dat, iucn)
 iucn_dat <- as.data.frame(matched_data[1])
 pca_dat <- as.data.frame(matched_data[2])
 rm(matched_data)
@@ -184,23 +234,29 @@ rm(matched_data)
 pca_dat <- as.matrix(pca_dat)
 
 # get distances to centroid for each species/sex pair
-centroid_distances <- as.data.frame(dispRity::dispRity(pca_dat, metric = mean.nn.dist, nn = 5)$disparity[[1]][[1]])
+centroid_distances <- as.data.frame(dispRity::dispRity(pca_dat, metric = dispRity::centroids)$disparity[[1]][[1]])
 rownames(centroid_distances) <- rownames(pca_dat)
 colnames(centroid_distances) <- c("centr_dist")
 glob_dist <- centroid_distances
 
-# check density of centroid distances
+# get knn values for each species/sex pair - pass in rownames of matrix in order to remove duplicate 
+# same-species-different-sex pairs
+nn_5 <- as.data.frame(dispRity::dispRity(
+    pca_dat, 
+    metric = mean.nn.dist, nn = 5, rownames = rownames(pca_dat)
+  )$disparity[[1]][[1]])
+rownames(nn_5) <- rownames(pca_dat)
+colnames(nn_5) <- c("nn_5_dist")
+glob_dist <- bind_cols(glob_dist, nn_5)
+
+# check density of centroid distances/knn values
 ggplot() + 
-  geom_density(data = centroid_distances, aes(x = centr_dist))
+  geom_histogram(data = glob_dist, aes(x = centr_dist), bins = 50)
 ggplot() + 
-  geom_histogram(data = centroid_distances, aes(x = centr_dist), bins = 50)
+  geom_histogram(data = glob_dist, aes(x = nn_5_dist), bins = 50)
 
 # attach IUCN categories to distance data
-glob_dist <- glob_dist %>% 
-  mutate(
-    iucn = iucn_dat$category[match(rownames(glob_dist), iucn_dat$specimen)]
-  )
-# note that since I've already matched the order the match() function is redundant here, but I'm leaving it in as a failsafe
+glob_dist$iucn <- iucn_dat$category[match(rownames(glob_dist), iucn_dat$specimen)] # note that since I've already matched the order the match() function is redundant here, but I'm leaving it in as a failsafe
 
 # add duplicate of each specimen with iucn cat "All" (for plotting box plot)
 all_dist <- glob_dist
@@ -208,11 +264,22 @@ all_dist$iucn <- c("All")
 
 all <- rbind(glob_dist, all_dist)
 
-# add species names and sex as columns
-all <- all %>% 
-mutate(
-  species = sapply(strsplit(rownames(.), split = "-"), "[", 1),
-  sex = sapply(strsplit(rownames(.), split = "-"), "[", 2),
+# save as dataset
+write.csv(
+  all,
+  here::here(
+    "2_Patches", "3_OutputData", "4_Diversity_measures",
+    "Neoaves.patches.231030.PCAcolspaces.jndxyzlum.240603.diversitymeasures.csv"
+  )
+)
+
+# read in again (if necessary)
+all <- read.csv(
+  here::here(
+    "2_Patches", "3_OutputData", "4_Diversity_measures",
+    "Neoaves.patches.231030.PCAcolspaces.jndxyzlum.240603.diversitymeasures.csv"
+  ), 
+  row.names = 1
 )
 
 # reorder levels of iucn cat for plotting
@@ -220,43 +287,80 @@ all$iucn <- factor(all$iucn, levels = c("CR", "EN", "VU", "NT", "LC", "All"))
 
 # create colour mapping
 cols <- springfield[1:length(levels(all$iucn))]
-names(cols) <- levels(all$iucn)
 
-# plot mean distance to centroid of each IUCN category (boxplot)
-# ggplot version (can subset by sex)
-all %>% 
-#  filter(
-#  sex == "M",
-#  iucn != "All") %>% 
-ggplot(aes(x = iucn, y = centr_dist, fill = iucn)) + 
-  geom_boxplot(notch = TRUE, show.legend = FALSE) + 
-  scale_fill_manual(values = cols) + 
-  xlab("Subset of IUCN categories") + ylab("Distance to centroid") +
-#  ylim(c(0, 90)) +
-  theme_minimal()
-  
+
+# ggplot
+centr_dist_plot <- ggplot(data = all, aes(x = iucn, y = log(centr_dist), fill = iucn)) + 
+  geom_boxplot(notch = TRUE, show.legend = FALSE,
+           #    outliers = F,
+               fill = cols) + 
+  xlab("Subset of IUCN categories") + ylab("ln(mean distance to centroid)") +
+  theme_minimal() +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, size = 0.5)  # Add black border
+  )
+nn_5_plot <- ggplot(data = all, aes(x = iucn, y = log(nn_5_dist), fill = iucn)) + 
+  geom_boxplot(notch = TRUE, show.legend = FALSE, 
+          #     outliers = F, 
+               fill = cols) + 
+  xlab("Subset of IUCN categories") + ylab("ln(mean distance to five nearest neighbours)") +
+  theme_minimal() +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, size = 0.5)  # Add black border
+  )
+# combine into single plot
+diversity_plot_figure <- ggpubr::ggarrange(
+  centr_dist_plot, nn_5_plot,
+  labels = c("A", "B"),
+  ncol = 2, nrow = 1
+)
+diversity_plot_figure
+
+# save as svg
+svg(
+  here::here(
+    "2_Patches", "4_OutputPlots", "2_Diversity_measures", 
+    "COPYNeoaves.patches.231030.PCAcolspaces.jndxyzlum.240603.logdiversitymeasures.iucn.plot.svg"
+  ),
+  width = 10, height = 5.5
+)
+
+diversity_plot_figure
+
+dev.off()
 
 # ok, so it looks like there might be some kind of difference between the mean distance to centroid (i.e. a measure 
 # of colour diversity) in different IUCN categories - let's just do a 
 # basic ANOVA ----
 # to find out
 
-# reorder levels of iucn cat for modelling (with "LC" as the reference category once 'All' cat is removed)
-all$iucn <- factor(all$iucn, levels = c("All", "LC", "CR", "EN", "VU", "NT"))
+# reorder iucn levels to make 'All' the reference (should talk to Chris about this decision)
+all$iucn <- factor(all$iucn, levels = c("All", "CR", "EN", "VU", "NT", "LC"))
 
 # make a model (will automatically perform an anova with a categorical predictor) with log transformed centroid distances to fulfil assumptions
-mod <- lm(log(centr_dist) ~ iucn, data = all %>% filter(iucn != "All"))
+mod_centr_dist <- lm(log(centr_dist) ~ iucn, data = all)
+mod_nn_5 <- lm(log(nn_5_dist) ~ iucn, data = all)
 
 # check assumptions
-autoplot(mod, smooth.colour = NA)
+autoplot(mod_centr_dist, smooth.colour = NA)
+autoplot(mod_nn_5, smooth.colour = NA)
 
 # create the anova table to get F and p values
-anova(mod)
+anova(mod_centr_dist)
+anova(mod_nn_5)
+
+summary(mod_centr_dist)
+summary(mod_nn_5)
+
+
+# -------------------- End of code that is useful for Confirmation Review -----------------------------------#
+
+
 # note that I've set the reference level to "CR" here - so this result is telling us there's a significant difference between
 # the log of the mean distance to the centroid for critically endangered species and the other categories, but it
 # doesn't tell us which categories are driving the difference. Let's do a tukey test to find out
 
-summary(mod)
+
 # looks like LC and ALL species have significantly lower mean distance to centroid than CR species, while EN have significantly
 # higher than CR
 
@@ -284,7 +388,7 @@ tukey_base$iucn[rownames(tukey_base$iucn) == "NT-LC" |
 
 # plot IUCN categories on UMAP colourspace
 # match iucn and umap data
-matched_data <- match_iucn(umap_jndxyzlumr, iucn)
+matched_data <- match_iucn(umap_jndxyzlum, iucn)
 iucn_dat <- as.data.frame(matched_data[1])
 umap_dat <- as.data.frame(matched_data[2]) %>% 
   mutate(
@@ -338,58 +442,6 @@ ggpubr::ggarrange(
   labels = c("A", "B", "C", "D", "E"),
   nrow = 2, ncol = 3
 )
-
-
-## Calculate convex hull volume, sequentially dropping each IUCN category ----
-## Note that we will only use the first 8 PCs as otherwise it's too computationally intensive
-
-# attach iucn data to pca data
-conv_dat <- pca_dat %>% 
-  as.data.frame() %>% 
-  mutate(
-    iucn = factor(iucn_dat$category[match(rownames(pca_dat), iucn_dat$specimen)], 
-                     levels = c("CR", "EN", "VU", "NT", "LC"))
-  )
-
-# set up empty list
-conv_hull_vols <- data.frame(
-  "iucn_subset" = factor(c("All", "-CR", "-EN", "-VU"), levels = c("All", "-CR", "-EN", "-VU")),
-  "volume" = c(rep(NA, length = length(levels(conv_dat$iucn)) - 1))
-)
-
-# volume of all species
-conv_hull_vols$volume[1] <- geometry::convhulln(as.matrix(conv_dat[, 1:8]), 
-                                             output.options = TRUE)$vol
-# remove CR species
-conv_hull_vols$volume[2] <- geometry::convhulln(as.matrix(filter(conv_dat, iucn != "CR")[, 1:8]), 
-                                             output.options = TRUE)$vol
-
-# remove CR and EN species
-conv_hull_vols$volume[3] <- geometry::convhulln(as.matrix(filter(conv_dat, iucn != "CR" & iucn != "EN")[, 1:8]), 
-                                             output.options = TRUE)$vol
-
-# remove CR, EN, and VU species (i.e. leave only NT species)
-conv_hull_vols$volume[4] <- geometry::convhulln(as.matrix(filter(conv_dat, iucn != "CR" & iucn != "EN" & iucn != "VU")[, 1:8]), 
-                                             output.options = TRUE)$vol
-
-# add column to represent change as proportion of original volume
-conv_hull_vols$rel_volume <- conv_hull_vols$volume / max(conv_hull_vols$volume)
-
-# plot results
-# create colour mapping
-cols <- springfield[1:length(conv_hull_vols)]
-names(cols) <- names(conv_hull_vols)
-
-# plot mean distance to centroid of each IUCN category (boxplot)
-# ggplot version (can subset by sex)
-conv_hull_vols %>% 
-  ggplot(aes(x = iucn_subset, y = rel_volume, colour = iucn_subset, size = rel_volume)) + 
-  geom_point(notch = TRUE, show.legend = FALSE) + 
-  scale_fill_manual(values = cols) + 
-  scale_size_continuous(range = c(10, 20)) +
-  xlab("Subset of IUCN categories") + ylab("Convex hull hypervolume") +
-  #  ylim(c(0, 90)) +
-  theme_minimal()
 
 
 
@@ -945,7 +997,7 @@ saveRDS(
   min_span_by_taxon, 
   file = here::here(
     "2_Patches", "3_OutputData", "4_Diversity_measures",
-    "PCA_jndxyzlumr_func_eve_by_taxon_subgroup.RDS"
+    "PCA_jndxyzlum_func_eve_by_taxon_subgroup.RDS"
   )
 )
 
@@ -978,7 +1030,7 @@ saveRDS(
   func_div_by_taxon, 
   file = here::here(
     "2_Patches", "3_OutputData", "4_Diversity_measures",
-    "PCA_jndxyzlumr_func_div_by_taxon_subgroup.RDS"
+    "PCA_jndxyzlum_func_div_by_taxon_subgroup.RDS"
   )
 )
 
