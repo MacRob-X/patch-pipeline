@@ -195,7 +195,14 @@ plot.FourPix <- function(obj1, obj2, obj3, obj4, filepath, asp = T){
 
 
 # Plot four basic patch plots together
-plot.FourPatch <- function(obj1, obj2, obj3, obj4, filepath = NULL, asp = T, taxonCol = NULL){
+plot.FourPatch <- function(obj1, obj2, obj3, obj4, filepath = NULL, asp = T, taxonCol = F, PCobj = NULL){
+  
+  # If PC object specified, get proportions of variance of each axis
+  # Note that for this to work, PCobj must be specified as a prcomp object
+  if(!is.null(PCobj)){
+    propVar <- round(summary(PCobj)$importance[2, ] * 100, digits = 1)
+  }
+
   
   # Initialise png saving if requested
   if(!is.null(filepath)){
@@ -217,8 +224,18 @@ plot.FourPatch <- function(obj1, obj2, obj3, obj4, filepath = NULL, asp = T, tax
       ylabel <- "PCA UMAP axis 2"
     }
     else if(substring(colnames(obj)[1], 1, 2) == "PC"){
-      xlabel <- paste0("PC axis ", substring(colnames(obj)[1], 3))
-      ylabel <- paste0("PC axis ", substring(colnames(obj)[2], 3))
+      # get PC axis variance if PCobj specified
+      if(!is.null(PCobj)){
+        xPropVar <- propVar[as.numeric(substring(colnames(obj)[1], 3))]
+        yPropVar <- propVar[as.numeric(substring(colnames(obj)[2], 3))]
+        xlabel <- paste0("PC axis ", substring(colnames(obj)[1], 3), " (", xPropVar, "%)")
+        ylabel <- paste0("PC axis ", substring(colnames(obj)[2], 3), " (", yPropVar, "%)")
+      }
+      else {
+        xlabel <- paste0("PC axis ", substring(colnames(obj)[1], 3))
+        ylabel <- paste0("PC axis ", substring(colnames(obj)[2], 3))
+        
+      }
     }
     else {
       xlabel <- colnames(obj)[1]
