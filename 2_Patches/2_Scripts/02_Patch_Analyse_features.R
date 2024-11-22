@@ -27,6 +27,21 @@ px <- readRDS("./2_Patches/3_OutputData/1_RawColourspaces/Neoaves.patches.231030
 # separate colour spaces and make the values for each dimension for each patch a separate column
 # once this is done, the data will be ready to perform PCA to obtain the colour pattern spaces
 
+# USML
+dat <- reshape(px[,c("species","sex","region","u","s","m", "l")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
+rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
+cps.usml <- dat[complete.cases(dat),-c(1:2)]
+
+# USML+DBL
+dat <- reshape(px[,c("species","sex","region","u","s","m", "l", "lum")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
+rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
+cps.usmldbl <- dat[complete.cases(dat),-c(1:2)]
+
+# USML+DBLr (scaled luminance)
+dat <- reshape(px[,c("species","sex","region","u","s","m", "l", "lumr")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
+rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
+cps.usmldblr <- dat[complete.cases(dat),-c(1:2)]
+
 # TCS xyz
 dat <- reshape(px[,c("species","sex","region","x","y","z")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
 rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
@@ -85,7 +100,9 @@ cps.jndxyzlumr <- dat[complete.cases(dat),-c(1:2)]
 # collate into one list for saving
 # these dataframes contain the individual patch colourspaces (e.g. first three columns of first dataframe together make 
 # up the belly patch luminance-free tetrahedral colour space)
-non_PCA_colourspaces <- list(xyz = cps.xyz,
+non_PCA_colourspaces <- list(usmldbl = cps.usmldbl,
+                             usmldblr = cps.usmldblr,
+                             xyz = cps.xyz,
                              xyzlum = cps.xyzlum,
                              xyzlumr = cps.xyzlumr,
                              lab = cps.lab,
@@ -97,14 +114,18 @@ non_PCA_colourspaces <- list(xyz = cps.xyz,
                              jndxyzlumr = cps.jndxyzlumr)
 
 
-saveRDS(non_PCA_colourspaces, "./2_Patches/3_OutputData/1_RawColourspaces/Neoaves.patches.231030.prePCAcolspaces.240603.rds")
+saveRDS(non_PCA_colourspaces, "./2_Patches/3_OutputData/1_RawColourspaces/Neoaves.patches.231030.prePCAcolspaces.240829.rds")
 
 
 # Perform PCA ----
 
 # reload the raw colour spaces (if necessary)
-non_PCA_colourspaces <- readRDS("./2_Patches/3_OutputData/1_RawColourspaces/Neoaves.patches.231030.prePCAcolspaces.240603.rds")
+non_PCA_colourspaces <- readRDS("./2_Patches/3_OutputData/1_RawColourspaces/Neoaves.patches.231030.prePCAcolspaces.240806.rds")
 
+
+cps.usml <- non_PCA_colourspaces$usml
+cps.usmldbl <- non_PCA_colourspaces$usmldbl
+cps.usmldblr <- non_PCA_colourspaces$usmldblr
 cps.xyz <- non_PCA_colourspaces$xyz
 cps.xyzlum <- non_PCA_colourspaces$xyzlum
 cps.xyzlumr <- non_PCA_colourspaces$xyzlumr
@@ -117,6 +138,22 @@ cps.jndxyzlum <- non_PCA_colourspaces$jndxyzlum
 cps.jndxyzlumr <- non_PCA_colourspaces$jndxyzlumr
 
 # perform PCA for each colour space to get colour pattern spaces (excluding hex space - can't PCA a non-numeric)
+
+# USML
+pca.usml <- prcomp(non_PCA_colourspaces$usmldbl)
+summary(pca.usml)
+saveRDS(pca.usml, "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Neoaves.patches.231030.PCAcolspaces.usml.240829.rds")
+
+# USML+DBL
+pca.usmldbl <- prcomp(non_PCA_colourspaces$usmldbl)
+summary(pca.usmldbl)
+saveRDS(pca.usmldbl, "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Neoaves.patches.231030.PCAcolspaces.usmldbl.240806.rds")
+
+# USML+DBLr
+pca.usmldblr <- prcomp(non_PCA_colourspaces$usmldblr)
+summary(pca.usmldblr)
+saveRDS(pca.usmldblr, "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Neoaves.patches.231030.PCAcolspaces.usmldblr.240806.rds")
+
 # TCS xyz
 pca.xyz <- prcomp(non_PCA_colourspaces$xyz)
 summary(pca.xyz)
