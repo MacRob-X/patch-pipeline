@@ -39,7 +39,7 @@ pc_mins <- apply(pca_space$x, 2, min)
 # Let's use the absolute max and absolute min to give our chosen resolution of n points
 # across the range
 # Let's start from 10% below the minimum range and go up to 10% above
-res <- 10
+res <- 15
 grand_max <- max(pc_maxes[])
 grand_min <- min(pc_mins)
 new_max <- grand_max + (grand_max/10)
@@ -48,131 +48,31 @@ increment <- (new_max - new_min) / (res-1)
 
 # generate a matrix spanning from the grand min to the grand max, moving in our
 # determined increments
+n_axes <- 2
+npoints <- res ^ n_axes
+theor_pca <- matrix(NA, nrow = npoints, ncol = n_axes)
+
+
+# let's just do it for 2 axes first, as this will simplify the creation of the matrix a lot
+n_axes <- 2
 # for each point with a given value in PC1, need res points in PC2, so total number of points
 # is res ^ n_axes
-n_axes <- 10
-n_points <- res ^ n_axes
-theor_pca <- matrix(NA, nrow = n_points, ncol = n_axes)
+npoints <- res ^ n_axes
+theor_pca <- matrix(NA, nrow = npoints, ncol = n_axes)
 
-
-# # for 2 dimensions
-# # for each point with value new_min in axis 1, need res points in axis 2
-# j <- 1
-# for(i in seq(1, n_points, by = res)){
-#   theor_pca[i:(i+res-1), 1] <- new_min + (j-1)*increment
-#   theor_pca[i:(i+res-1), 2] <- seq(from = new_min, to = new_max, by = increment)
-#   j <- j + 1
-# }
-# 
-# # Need to find a way to generalise the above to n_axes dimensions
-# 
-# 
-# # for 3 dimensions
-# j <- 1
-# for(i in seq(1, n_points, by = res^2)){
-#   theor_pca[i:(i+res^2-1), 3] <- rep(seq(from = new_min, to = new_max, by = increment), times = res)
-#   theor_pca[i:(i+res^2-1), 2] <- sort(
-#     rep(seq(from = new_min, to = new_max, by = increment), times = res), 
-#     decreasing = FALSE
-#     )
-#   theor_pca[i:(i+res^2-1), 1] <- new_min + (j-1)*increment
-#   j <- j + 1
-# }
-# 
-# # for 4 dimensions, need to repeat the 3-dimensional generated space res times - this will
-# # provide axes 2-4. Hold axis one constant for each repetition
-# j <- 1
-# for(i in seq(1, n_points, by = res^3)){
-#   theor_pca[i:(i+(res^3)-1), 4] <- rep(seq(from = new_min, to = new_max, by = increment), times = res^2)
-#   theor_pca[i:(i+(res^3)-1), 3] <- sort(
-#     rep(seq(from = new_min, to = new_max, by = increment), times = res^2), 
-#     decreasing = FALSE
-#   )
-#   theor_pca[i:(i+(res^3)-1), 2] <- new_min + (j-1)*increment
-#   j <- j + 1
-# }
-# 
-# # n dimensions
-# dim1 <- seq(from = new_min, to = new_max, by = increment)
-# dim2 <- cbind(
-#   sort(rep(dim1, times = res)),
-#   rep(dim1, times = res)
-#   
-# )
-# dim3 <- cbind(
-#   sort(rep(dim2[, 1], times = res)),
-#   rep(dim2[, 1], times = res),
-#   rep(dim2[, 2], times = res)
-# )
-
-
-# generalise the above in a for loop ##################
-# same as above, but move left to right across columns (should be simpler)
-dim1 <- matrix(
-  c(rep(seq(from = new_min, to = new_max, by = increment), times = res^(n_axes-1)),
-    rep(NA, times = (res^n_axes)*(n_axes-1))), 
-  ncol = n_axes
-)
-for(i in 2:n_axes){
-  
-  # make copy of previous dimension
-  dim_imin1 <- get(paste0("dim", i-1))
-  dim_name <- paste0("dim", i)
-  
-  # assign new dimension values
-  if(i < n_axes){
-    pattern <- sort(rep(dim_imin1[1:res^(i-1), i-1], times = res))
-    dim_i <-  cbind(
-      dim_imin1[, 1:i-1],
-      rep(pattern, times = n_points/length(pattern)),
-      dim_imin1[, (i+1):n_axes]
-    )
-  } else if (i == n_axes){
-    pattern <- sort(rep(dim_imin1[1:res^(i-1), i-1], times = res))
-    dim_i <-  cbind(
-      dim_imin1[, 1:i-1],
-      rep(pattern, times = n_points/length(pattern))
-    )
-  }
-  
-  assign(dim_name, dim_i)
-  rm(dim_imin1, dim_i)
+# or each point with value new_min in axis 1, need res points in axis 2
+j <- 1
+for(i in seq(1, npoints, by = res)){
+  theor_pca[i:(i+res-1), 1] <- new_min + (j-1)*increment
+  theor_pca[i:(i+res-1), 2] <- seq(from = new_min, to = new_max, by = increment)
+  j <- j + 1
 }
 
-# assign matrix of generated points to new variable and remove intermediate variables
-# N.B. this code will need to be edited each time n_axes is changed
-theor_pca <- dim5
-rm(dim1, dim2, dim3, dim4, dim5)
+# Need to find a way to generalise the above to n_axes dimensions
 
-#########################################################################################
-### ALTERNATIVELY, generate a set number of points spaced randomly between the min and
-### max of each individual PC
-n_axes <- 10
-n_points <- 1000
-theor_pca <- matrix(NA, nrow = n_points, ncol = n_axes)
 
-# generate data
-for (i in 1:n_axes) {
-  # get min and max of axis
-  axis_min <- pc_mins[i]
-  axis_max <- pc_maxes[i]
-  # generate uniform distribution of n points between min and max and assign to 
-  # matrix column
-  theor_pca[, i] <- runif(n_points, min = axis_min, max = axis_max)
-}
-# assign column names
-colnames(theor_pca) <- paste0("PC", 1:n_axes)
-# assign 2 random letters and 3 random numbers as rownames (to id each 'specimen')
-# code modified from https://stackoverflow.com/questions/42734547/generating-random-strings
-row_ids <- function(n_points) {
-  a <- do.call(paste0, replicate(1, sample(LETTERS, n_points, TRUE), FALSE))
-  paste0(a, sprintf("%03d", sample(9999, n_points, TRUE)), sample(LETTERS, n_points, TRUE))
-}
-rownames(theor_pca) <- row_ids(n_points)
 
-#########################################################################################
-
-# Reconstruct original data from generated PCA data ----
+# Reconstruct original data from generated PCA data
 
 # First cut off the pca space to match the number of axes selected
 # and add our newly generated space data
@@ -209,12 +109,13 @@ head(recon_space)
 srgb_dat <- recon_space
 
 # tidy up names and add rownames of coordinates
-# rownames(srgb_dat) <- paste(round(theor_pca[, 1], 2), round(theor_pca[, 2], 2), sep = ".")
+rownames(srgb_dat) <- paste(round(theor_pca[, 1], 2), round(theor_pca[, 2], 2), sep = ".")
 
 srgb_dat <- srgb_dat %>% 
   as.data.frame() %>% 
   mutate(
-    id = rownames(.)
+    PC1 = round(theor_pca[, 1], 2),
+    PC2 = round(theor_pca[, 2], 2),
   ) %>% 
   rename(
     bel_r = sRGB.r.bel, bel_g = sRGB.g.bel, bel_b = sRGB.b.bel, 
@@ -238,7 +139,7 @@ srgb_r <- srgb_dat %>%
     names_to = "body_part",
     values_to = "r"
   ) %>% 
-  select(id, body_part, r) %>% 
+  select(PC1, PC2, body_part, r) %>% 
   mutate(
     body_part = stringr::str_replace(body_part, "_r", "")
   )
@@ -249,7 +150,7 @@ srgb_g <- srgb_dat %>%
     names_to = "body_part",
     values_to = "g"
   ) %>% 
-  select(id, body_part, g) %>% 
+  select(PC1, PC2, body_part, g) %>% 
   mutate(
     body_part = stringr::str_replace(body_part, "_g", "")
   )
@@ -260,7 +161,7 @@ srgb_b <- srgb_dat %>%
     names_to = "body_part",
     values_to = "b"
   ) %>% 
-  select(id, body_part, b) %>% 
+  select(PC1, PC2, body_part, b) %>% 
   mutate(
     body_part = stringr::str_replace(body_part, "_b", "")
   )
@@ -283,53 +184,32 @@ srgb_long %>% glimpse()
 # remove intermediate dataframes
 rm(srgb_r, srgb_g, srgb_b)
 
-# Convert any impossible colours (i.e. r, g, or b < 0 or > 1) to hot pink (0.961, 0.411, 0.706)
-pink_r <- 0.961; pink_g <- 0.411; pink_b <- 0.706
-# check and convert r < 0
-srgb_long[srgb_long$r < 0, "b"] <- pink_b
-srgb_long[srgb_long$r < 0, "g"] <- pink_g
-srgb_long[srgb_long$r < 0, "r"] <- pink_r
-# check and convert g < 0
-srgb_long[srgb_long$g < 0, "b"] <- pink_b
-srgb_long[srgb_long$g < 0, "r"] <- pink_r
-srgb_long[srgb_long$g < 0, "g"] <- pink_g
-# check and convert b < 0
-srgb_long[srgb_long$b < 0, "r"] <- pink_r
-srgb_long[srgb_long$b < 0, "g"] <- pink_g
-srgb_long[srgb_long$b < 0, "b"] <- pink_b
-# check and convert r > 1
-srgb_long[srgb_long$r > 1, "b"] <- pink_b
-srgb_long[srgb_long$r > 1, "g"] <- pink_g
-srgb_long[srgb_long$r > 1, "r"] <- pink_r
-# check and convert g > 1
-srgb_long[srgb_long$g > 1, "b"] <- pink_b
-srgb_long[srgb_long$g > 1, "r"] <- pink_r
-srgb_long[srgb_long$g > 1, "g"] <- pink_g
-# check and convert b > 1
-srgb_long[srgb_long$b > 1, "r"] <- pink_r
-srgb_long[srgb_long$b > 1, "g"] <- pink_g
-srgb_long[srgb_long$b > 1, "b"] <- pink_b
-
+# Convert any impossible colours (i.e. r, g, or b < 0 or > 1) to hot pink (0.96, 1, 1)
+for(i in nrow(srgb_long)){
+  if(srgb_long$r[i] < 0 | srgb_long$r[i] > 1 | srgb_long$g[i] < 0 | srgb_long$g[i] > 1 | srgb_long$b[i] < 0 | srgb_long$b[i] > 1) {
+    srgb_long$r <- 0.961
+    srgb_long$g <- 0.411
+    srgb_long$b <- 0.706
+  }
+}
 
 # Create colour grids for each specimen
-for(i in 1:nrow(srgb_dat)){
+for(i in 1:length(srgb_dat$PC1)){
   
   # get specimen
-  specimen <- srgb_dat[i, "id"]
+  specimen <- paste(srgb_dat[i, "PC1"], srgb_dat[i, "PC2"], sep = "_")
   specimen_rgb <- srgb_long %>% 
     filter(
-      id == srgb_dat[i, "id"]
+      PC1 == srgb_dat[i, "PC1"],
+      PC2 == srgb_dat[i, "PC2"]
     ) %>% 
     arrange(body_part)  # this determines the position of each body part in the grid
   
-  # initialise png saving (in X drive for space reasons)
+  # initialise png saving
   png(
-    paste0(
-      "X:/cooney_lab/Shared/Rob-MacDonald/simulated_colour_grids/", 
-      space, "/", n_axes, "dim_random", "/", specimen, ".png"),
-    # here::here(
-    #   "2_Patches", "3_OutputData", "5_colour_grids", "2_Simulated_grids", paste0(specimen, ".png")
-    # ),
+    here::here(
+      "2_Patches", "3_OutputData", "5_colour_grids", "2_Simulated_grids", paste0(specimen, ".png")
+    ),
     # paste0("C:/Users/bop23rxm/Documents/colour_grids_repositioned/", specimen, ".png"),   # use local storage as faster
     width = 100, height = 160,
     units = "px"
@@ -353,72 +233,11 @@ for(i in 1:nrow(srgb_dat)){
   dev.off()
   
   # display where up to 
-  cat(paste0("\r", i, " of ", nrow(srgb_dat), " processed"))
+  cat(paste0("\r", i, " of ", length(srgb_dat$PC1), " processed"))
 }
 
 
-## Plot the colour grids on the PC axes ----
-
-# get simulated PCA data and add id to match to colour grid
-theor_pca_df <- as.data.frame(theor_pca, row.names = rownames(theor_pca))
-colnames(theor_pca_df) <- paste0("PC", 1:n_axes)
-
-# subset to get specific points, e.g. hold 3 PCs steady at min or max while varying other PCs
-subset <- theor_pca_df[theor_pca_df$PC3 == max(theor_pca_df$PC3) & 
-                         theor_pca_df$PC4 == max(theor_pca_df$PC4) &
-                         theor_pca_df$PC5 == max(theor_pca_df$PC5), ]
-
-# get proportions of variance for each axis from original (non-reconstructed) PCA object
-pca_variance <- pca_space %>% 
-  summary() %>% 
-  magrittr::extract2("importance") %>% 
-  as.data.frame()
-
-
-# get x and y ranges
-xrange <- c((min(theor_pca_df$PC1) - 0.5 ), (max(theor_pca_df$PC1) + 0.5 ))
-yrange <- c((min(theor_pca_df$PC2) - 0.5 ), (max(theor_pca_df$PC2) + 0.5 ))
-
-# set axis labels
-xlabel <- paste0("PC1 (", round(pca_variance$PC1[2], 2) * 100, "% of variance)")
-ylabel <- paste0("PC2 (", round(pca_variance$PC2[2], 2) * 100, "% of variance)")
-
-
-png(
-  here::here(
-    "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", "theoretical_colourspaces",
-    space, paste("patches", space, "theoretical_colspace", "PC1", "PC2", "random10dim.png", sep = "_") 
-  ),
-  width = 4020, height = 2568,
-  units = "px"
-)
-
-
-plot(theor_pca_df$PC1 ~ theor_pca_df$PC2, asp = T, type = "n", xlab = xlabel, ylab = ylabel, las = 1,
-     xlim = xrange, ylim = yrange)
-
-box(lwd = 2)
-rw <- diff(range(theor_pca_df[,1]))/12
-
-# set colour grid location
-# gridloc <- here::here(
-#   "2_Patches", "3_OutputData", "5_colour_grids", "2_Simulated_grids"
-# )
-gridloc <- paste0(
-  "X:/cooney_lab/Shared/Rob-MacDonald/simulated_colour_grids/", 
-  space, "/", n_axes, "dim_random", "/")
-
-for(i in 1:nrow(theor_pca_df)){
-  fname <- rownames(theor_pca_df)[i]
-  fpng <- png::readPNG(paste0(
-    gridloc, "/",
-    fname, ".png"))
-  rasterImage(fpng, 
-              xleft = theor_pca_df$PC1[i] - (rw/(res*(2/3))), 
-              ybottom = theor_pca_df$PC2[i]-(rw/(res*(2/5))), 
-              xright = theor_pca_df$PC1[i]+(rw/(res*(2/3))), 
-              ytop = theor_pca_df$PC2[i]+(rw/(res*(2/5))))
-  cat(paste0("\r", i, " of ", nrow(theor_pca_df), " processed"))
-}
-
-dev.off()
+## Doesn't seem to work for now - it's because literally all the generated patch 
+## colours are being converted to hot pink
+## I think there must not be enough info in the first two axes to accurately regenerate
+## an RGB code that works. Could try to fix this tomorrow
