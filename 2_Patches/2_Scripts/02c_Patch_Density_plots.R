@@ -110,18 +110,17 @@ assert_umap_pca <- checkmate::makeAssertionFunction(check_umap_pca)
 # Select subset of species ("Neoaves" or "Passeriformes")
 clade <- "Passeriformes"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
-# N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
-# (from 240603 to 240806)
 space <- "lab"
 
 # PCA data (output from 02_Patch_Analyse_features)
-pca_filename <- paste(clade, "patches.231030.PCAcolspaces", space, "240925", "rds", sep = ".")
+pca_filename <- paste(clade, "patches.231030.PCAcolspaces", "rds", sep = ".")
 pca_all <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
     pca_filename
   )
-)
+) %>% 
+  magrittr::extract2(space)
 
 # UMAP data (output from 02b_Patch_Umap_iterations.R)
 umap_filename <- paste(clade, "patches", space, "pca", "canonUMAP", "rds", sep = ".")
@@ -136,7 +135,7 @@ umap_all <- readr::read_rds(
 # taxonomy
 taxo_raw <- read.csv(
   here::here(
-    "4_SharedInputData", "BLIOCPhyloMasterTax_2016_02_29.csv"
+    "4_SharedInputData", "BLIOCPhyloMasterTax_2019_10_28.csv"
   )
 ) %>% 
   janitor::clean_names()

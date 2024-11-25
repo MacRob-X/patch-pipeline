@@ -9,7 +9,7 @@ rm(list=ls())
 # Custom functions ----
 source(
   here::here(
-    "2_Patches", "2_Scripts", "2_BetaVersions", "Patch_Plotting_functions_v1.r"
+    "2_Patches", "2_Scripts", "R", "patch_plotting.r"
   )
 )
 
@@ -28,13 +28,13 @@ min_dist <- "default"
 ## END EDITABLE CODE
 
 # load patch data (PCA of whichever colourspace - generated in 02_Patch_Analyse_features.R)
-pca_filename <- paste(clade, "patches.231030.PCAcolspaces", space, "240925", "rds", sep = ".")
+pca_filename <- paste(clade, "patches.231030.PCAcolspaces", "rds", sep = ".")
 pca_all <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
     pca_filename
   )
-)
+)[[space]]
 
 # load taxonomic data
 taxo <- read.csv(

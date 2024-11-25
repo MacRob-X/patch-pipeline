@@ -8,6 +8,30 @@ library(motmot)
 library(ape)
 library(geomorph)
 
+## EDITABLE CODE ##
+# Select subset of species ("Neoaves" or "Passeriformes")
+clade <- "Passeriformes"
+# select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
+space <- "lab"
+# select sex of interest ("M" or "F")
+sex <- "M"
+
+# Functions ----
+
+# get list of species (with sex) included in PCA data
+get_spp_sex <- function(div_data){
+  
+  # extract species and sex
+  spp_sex <- t(sapply(strsplit(rownames(div_data), split = "-"), "[", 1:2))
+  
+  # set column names
+  colnames(spp_sex) <- c("species", "sex")
+  
+  return(spp_sex)
+  
+}
+
+
 # Load and prepare data ----
 
 # load phylogeny (full trees 0001 to 1000, Hackett backbone - from birdtree.org)
@@ -22,26 +46,18 @@ write.tree(phy, file = "./4_SharedInputData/First100_AllBirdsHackett1.tre")
 # load first 100 trees
 phy <- read.tree("./4_SharedInputData/First100_AllBirdsHackett1.tre")
 
-# load jndxyzlumr PCA patch data 
-pcaAll <- readRDS("./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/Neoaves.patches.231030.PCAcolspaces.jndxyzlumr.240404.rds")
+# load PCA patch data 
+pca_filename <- paste(clade, "patches.231030.PCAcolspaces.rds", sep = ".")
+pcaAll <- readRDS(paste0("./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/", pca_filename))[[space]]
 
 # add species name and sex as columns in pca data
 pcaDat <- as.data.frame(pcaAll$x)
-l <- length(pcaDat[,1])
-pcaDat$species <- c(rep(NA, times = l))
-pcaDat$sex <- c(rep(NA, times = l))
-for(i in 1:l){
-  cat("\r", i)
-  split <- strsplit(rownames(pcaDat)[i], split = "-")[[1]]
-  pcaDat$species[i] <- split[1]
-  pcaDat$sex[i] <- split[2]
-}
-rm(l, split)
+pcaDat <- cbind(pcaDat, get_spp_sex(pcaDat))
 
 # trim to males/females only
-pcaDat <- pcaDat[pcaDat$sex == "M",]
+pcaDat <- pcaDat[pcaDat$sex == sex,]
 
-# drop species not in the phylogeny
+# drop species not in the phylogeny (there shouldn't actually be any of these)
 pcaDat <- pcaDat[pcaDat$species %in% phy[[1]]$tip.label, ]
 
 # match phylogeny to species in dataset
@@ -89,13 +105,13 @@ cl <- makeCluster(no_cores)
 # Export the variables and functions needed by the workers
 clusterExport(cl, varlist = c("phy", "pcaDat", "transformPhylo.ML"))
 
-# Define the function to calculate lambda for a given PC axis
-calc_lambda <- function(i) {
-  traitData <- as.matrix(pcaDat[, i])
-  rownames(traitData) <- rownames(pcaDat)
-  parLapply(cl, 1:length(phy), function(j) {
-    cat("\rProcessing tree", j, "for PC axis", i)
-    transformPhylo.ML(phy = phy[[j]], y = traitData, model = "lambda")
+# Define the function to calculate lambda for a given PC axis across each phylogenetic tree in distribution
+calc_lambda <- function(col, data, tree_distrib) {
+  traitData <- as.matrix(data[, col])
+  rownames(traitData) <- rownames(data)
+  parLapply(cl, 1:length(tree_distrib), function(j) {
+    cat("\rProcessing tree", j, "for PC axis", col)
+    transformPhylo.ML(phy = tree_distrib[[j]], y = traitData, model = "lambda")
   })
 }
 
@@ -103,16 +119,17 @@ calc_lambda <- function(i) {
 lambda.ml <- vector("list", length = ncol(pcaDat))
 
 # Apply the function across all PC axes
+lambda.ml <- apply(as.matrix(pcaDat), 2, calc_lambda)
 for(i in 1:ncol(pcaDat)) {
   print(paste("Processing PC axis", i))
-  lambda.ml[[i]] <- calc_lambda(i)
+  lambda.ml[[i]] <- calc_lambda(i, pcaDat, phy)
 }
 
 # Stop the cluster after use
 stopCluster(cl)
 
 # save
-saveRDS(lambda.ml, file = "./Outputs/patch.F.jndxyzlumrPCA.lambdaML.rds")
+saveRDS(lambda.ml, file = paste("./2_Patches/3_OutputData/3_Phylogenetic_signal/patch", sex, space, "lambdaML.rds", sep = "."))
 
 
 # Load pagel's lambda for each PC
