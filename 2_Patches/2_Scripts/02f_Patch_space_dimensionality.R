@@ -15,21 +15,24 @@ rm(list=ls())
 # Load custom functions to estimate dimensionality ----
 source(
   here::here(
-    "3_SharedScripts", "2_BetaVersions", "estimate_dimensionality_functions.R"
+    "3_SharedScripts", "estimate_dimensionality_functions.R"
   )
 )
 
 # EDITABLE CODE # ----
+# Select subset of species ("Neoaves" or "Passeriformes")
+clade <- "Passeriformes"
 # Choose space to work with (usmldbl, usmldblr, xyz, xyzlum, xyzlumr, lab, cie, sRGB, hex, 
 # jndxyz, jndxyzlum, jndxyzlumr)
-space <- "usmldbl"
+space <- "lab"
 
 # Load data ----
 
 # Load in raw (pre-PCA) colourspaces and extract space of interest
 pre_pca_space <- readRDS(
   here::here(
-    "2_Patches", "3_OutputData", "1_RawColourSpaces", "Neoaves.patches.231030.prePCAcolspaces.240806.rds"
+    "2_Patches", "3_OutputData", "1_RawColourSpaces", 
+    paste0(clade, ".patches.231030.prePCAcolspaces.rds")
   )
 ) %>% 
   magrittr::extract2(space)
@@ -38,9 +41,10 @@ pre_pca_space <- readRDS(
 pca_space <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
-    paste0("Neoaves.patches.231030.PCAcolspaces.", space, ".240806.rds")
+    paste0(clade, ".patches.231030.PCAcolspaces.rds")
   )
-)
+) %>% 
+  magrittr::extract2(space)
 
 # Perform analyses ----
 
@@ -235,4 +239,11 @@ res <- rbind(res, data.frame(denoised = "TRUE",
                              method_type = "linear", 
                              cutoff = paranal_cutoff))
 
+# Inspect results
+res
 
+# Plot results to further inspect
+res %>% 
+  ggplot(aes(x = method, y = cutoff, colour = method)) + 
+  geom_point(size = 2) + 
+  facet_wrap(~ denoised, nrow = 2)

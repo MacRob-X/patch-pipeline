@@ -22,10 +22,10 @@ space <- "lab"
 ## TRUE - load a UMAP space from a file
 ## "perform" - load a PCA space from a file, then perform UMAP on it
 ## Note that if umap == TRUE, user will have to manually set path to umap file
-load_umap <- FALSE
+load_umap <- TRUE
 umap_filepath <- here::here(
   "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
-  paste(clade, "patches.pca", space, "UMAPs.iterations.20240927.rds", sep = ".")
+  paste(clade, "patches", space, "pca.canonUMAP.rds", sep = ".")
 )
 # umap_filepath <- here::here(
 #   "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
@@ -33,7 +33,7 @@ umap_filepath <- here::here(
 # )
 # If load_umap == FALSE, can set perform_umap == TRUE
 # to perform UMAP on the loaded PCA and then plot the UMAP axes
-perform_umap <- TRUE
+perform_umap <- FALSE
 ## Choose PCs to plot (if plotting PCA)
 x_axis <- "PC1"
 y_axis <- "PC2"
@@ -53,7 +53,6 @@ font_par <- "Century Gothic"
 
 if(load_umap == TRUE) {
     plot_space <- readr::read_rds(umap_filepath) %>% 
-      magrittr::extract2(1) %>% 
       magrittr::extract2("layout") %>% 
       as.data.frame() %>% 
       rename(
@@ -65,11 +64,12 @@ if(load_umap == TRUE) {
   # set path to file
   pca_filepath <- here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA", 
-    paste(clade, "patches.231030.PCAcolspaces", space, "240925", "rds", sep = ".")
+    paste(clade, "patches.231030.PCAcolspaces", "rds", sep = ".")
 #    paste0("Neoaves.patches.231030.PCAcolspaces.", space, ".240829.rds")
   )
   # load data from file
-  pca_all <- readr::read_rds(pca_filepath)
+  pca_all <- readr::read_rds(pca_filepath) %>% 
+    magrittr::extract2(space)
   # extract pc scores to plot
   plot_space <- pca_all %>% 
     magrittr::extract2("x") %>% 

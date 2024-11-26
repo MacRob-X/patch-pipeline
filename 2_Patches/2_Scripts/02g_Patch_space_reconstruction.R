@@ -9,18 +9,20 @@ library(dplyr)
 rm(list=ls())
 
 # EDITABLE CODE # ----
+# Select subset of species ("Neoaves" or "Passeriformes")
+clade <- "Passeriformes"
 # Choose space to work with (usmldbl, usmldblr, xyz, xyzlum, xyzlumr, lab, cie, srgb, hex, 
 # jndxyz, jndxyzlum, jndxyzlumr)
-space <- "srgb"
+space <- "sRGB"
 
 
 # Load in PCA colourspace ----
 pca_space <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
-    paste0("Neoaves.patches.231030.PCAcolspaces.", space, ".240603.rds")
+    paste0(clade, ".patches.231030.PCAcolspaces.rds")
   )
-)
+)[[space]]
 
 
 # Generate a matrix of every point in colour pattern space ---- 
@@ -50,7 +52,7 @@ increment <- (new_max - new_min) / (res-1)
 # determined increments
 # for each point with a given value in PC1, need res points in PC2, so total number of points
 # is res ^ n_axes
-n_axes <- 10
+n_axes <- 2
 n_points <- res ^ n_axes
 theor_pca <- matrix(NA, nrow = n_points, ncol = n_axes)
 

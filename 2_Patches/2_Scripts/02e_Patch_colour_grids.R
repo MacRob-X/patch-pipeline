@@ -9,10 +9,17 @@ rm(list=ls())
 library(dplyr)
 library(ggplot2)
 
+## EDITABLE CODE ##
+# Select subset of species ("Neoaves" or "Passeriformes")
+clade <- "Passeriformes"
+# select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr", etc.)
+space <- "lab"
+
 # load rgb data ----
 srgb_dat <- readr::read_rds(
   here::here(
-    "2_Patches", "3_OutputData", "1_RawColourspaces", "Neoaves.patches.231030.prePCAcolspaces.240404.rds"
+    "2_Patches", "3_OutputData", "1_RawColourspaces", 
+    paste0(clade, ".patches.231030.prePCAcolspaces.rds")
   )
 ) %>% 
   magrittr::extract2("sRGB")
@@ -20,26 +27,28 @@ srgb_dat <- readr::read_rds(
 # load raw (pre-PCA) TCS xyz data
 raw_patch_tcs <- readr::read_rds(
   here::here(
-    "2_Patches", "3_OutputData", "1_RawColourspaces", "Neoaves.patches.231030.prePCAcolspaces.240404.rds"
+    "2_Patches", "3_OutputData", "1_RawColourspaces", 
+    paste0(clade, ".patches.231030.prePCAcolspaces.rds")
   )
 ) %>% 
   magrittr::extract2("xyz")
 
-# load PCA data (output from 02_Patch_Analyse_features.R) - specify the one you want (e.g. jndxyzlumr)
+# load PCA data (output from 02_Patch_Analyse_features.R)
 pca_all <- readr::read_rds(
   here::here(
-    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA", "Neoaves.patches.231030.PCAcolspaces.usmldblr.240806.rds"
-  )
-)
-
-# load jndxyzlumr umap (output from 02b_Patch_Umap_iterations.R)
-umap_jndxyzlumr <- readr::read_rds(
-  here::here(
-    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
-    "Neoaves.patches.pca.jndxyzlumr.UMAPs.iterations.240326.rds"
+    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA", 
+    paste0(clade, ".patches.231030.PCAcolspaces.rds")
   )
 ) %>% 
-  magrittr::extract2(1) %>% 
+  magrittr::extract2(space)
+
+# load jndxyzlumr umap (output from 02b_Patch_Umap_iterations.R)
+umap <- readr::read_rds(
+  here::here(
+    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
+    paste0(clade, ".patches.", space, ".pca.canonUMAP.rds")
+  )
+) %>% 
   magrittr::extract2("layout") %>% 
   as.data.frame() %>% 
   rename(
@@ -47,14 +56,15 @@ umap_jndxyzlumr <- readr::read_rds(
   )
 
 # or perform UMAP on another colour model PCA dataset
-umap_xyzlumr <- umap::umap(
-  pca_all$x
-)   %>% 
-  magrittr::extract2("layout") %>% 
-  as.data.frame() %>% 
-  rename(
-    umap_1 = V1, umap_2 = V2
-  )
+# N.B. best not to do this - better to use the canon UMAP
+# umap_xyzlumr <- umap::umap(
+#   pca_all$x
+# )   %>% 
+#   magrittr::extract2("layout") %>% 
+#   as.data.frame() %>% 
+#   rename(
+#     umap_1 = V1, umap_2 = V2
+#   )
 
 
 # get species and sex and tidy up names
@@ -179,34 +189,35 @@ for(i in 1:length(srgb_dat$species)){
 ## Plot UMAP with colour grids as points ----
 
 # get x and y ranges
-xrange <- c((min(umap_jndxyzlumr$umap_1) - 0.5 ), (max(umap_jndxyzlumr$umap_1) + 0.5 ))
-yrange <- c((min(umap_jndxyzlumr$umap_2) - 0.5 ), (max(umap_jndxyzlumr$umap_2) + 0.5 ))
+xrange <- c((min(umap$umap_1) - 0.5 ), (max(umap$umap_1) + 0.5 ))
+yrange <- c((min(umap$umap_2) - 0.5 ), (max(umap$umap_2) + 0.5 ))
 
 png(
   here::here(
-    "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", "jndxyzlumr", "patches_jndxyzlumr_umap_colour_grids_repositioned.png"
+    "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", space, 
+    paste0(clade, "_patches_", space, "_umap_colour_grids.png")
   ),
   width = 4020, height = 2568,
   units = "px"
 )
 
-plot(umap_jndxyzlumr[, 1] ~ umap_jndxyzlumr[, 2], asp = T, type="n", xlab="UMAP1", ylab="UMAP2", las=1,
+plot(umap[, 1] ~ umap[, 2], asp = T, type="n", xlab="UMAP1", ylab="UMAP2", las=1,
      xlim = xrange, ylim = yrange)
 
 box(lwd = 2)
-rw <- diff(range(umap_jndxyzlumr[,1]))/12
+rw <- diff(range(umap[,1]))/12
 
-for(i in 1:nrow(umap_jndxyzlumr)){
-  fname <- rownames(umap_jndxyzlumr)[i]
+for(i in 1:nrow(umap)){
+  fname <- rownames(umap)[i]
   fpng <- png::readPNG(paste0(
     "C:/Users/bop23rxm/Documents/colour_grids_repositioned/", 
     paste(strsplit(fname, split="-")[[1]][1:2], collapse = "_"), ".png"))
   rasterImage(fpng, 
-              xleft = umap_jndxyzlumr[i, 1] - (rw/15), 
-              ybottom = umap_jndxyzlumr[i, 2]-(rw/9), 
-              xright = umap_jndxyzlumr[i, 1]+(rw/15), 
-              ytop = umap_jndxyzlumr[i, 2]+(rw/9))
-  cat(paste0("\r", i, " of ", nrow(umap_jndxyzlumr), " processed"))
+              xleft = umap[i, 1] - (rw/15), 
+              ybottom = umap[i, 2]-(rw/9), 
+              xright = umap[i, 1]+(rw/15), 
+              ytop = umap[i, 2]+(rw/9))
+  cat(paste0("\r", i, " of ", nrow(umap), " processed"))
 }
 
 dev.off()
@@ -214,7 +225,7 @@ dev.off()
 
 ## Plot the first two PCA axes with colour grids as points
 # get pca data
-pca_jndxyzlumr <- pca_all %>% 
+pca_dat <- pca_all %>% 
   magrittr::extract2("x") %>% 
   as.data.frame()
 
@@ -226,8 +237,8 @@ pca_variance <- pca_all %>%
 
 
 # get x and y ranges
-xrange <- c((min(pca_jndxyzlumr$PC1) - 0.5 ), (max(pca_jndxyzlumr$PC1) + 0.5 ))
-yrange <- c((min(pca_jndxyzlumr$PC2) - 0.5 ), (max(pca_jndxyzlumr$PC2) + 0.5 ))
+xrange <- c((min(pca_dat$PC1) - 0.5 ), (max(pca_dat$PC1) + 0.5 ))
+yrange <- c((min(pca_dat$PC2) - 0.5 ), (max(pca_dat$PC2) + 0.5 ))
 
 # set axis labels
 xlabel <- paste0("PC1 (", round(pca_variance$PC1[2], 2) * 100, "% of variance)")
@@ -235,29 +246,30 @@ ylabel <- paste0("PC2 (", round(pca_variance$PC2[2], 2) * 100, "% of variance)")
 
 png(
   here::here(
-    "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", "usmldblr", "patches_usmldblr_pca_pc1_pc2_colour_grids.png"
+    "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", space, 
+    paste0(clade, "_patches_", space, "_pca_pc1_pc2_colour_grids.png")
   ),
   width = 4020, height = 2568,
   units = "px"
 )
 
-plot(pca_jndxyzlumr$PC1 ~ pca_jndxyzlumr$PC2, asp = T, type = "n", xlab = xlabel, ylab = ylabel, las = 1,
+plot(pca_dat$PC1 ~ pca_dat$PC2, asp = T, type = "n", xlab = xlabel, ylab = ylabel, las = 1,
      xlim = xrange, ylim = yrange)
 
 box(lwd = 2)
-rw <- diff(range(pca_jndxyzlumr[,1]))/12
+rw <- diff(range(pca_dat[,1]))/12
 
-for(i in 1:nrow(pca_jndxyzlumr)){
-  fname <- rownames(pca_jndxyzlumr)[i]
+for(i in 1:nrow(pca_dat)){
+  fname <- rownames(pca_dat)[i]
   fpng <- png::readPNG(paste0(
     "C:/Users/bop23rxm/Documents/colour_grids_repositioned/", 
     paste(strsplit(fname, split="-")[[1]][1:2], collapse = "_"), ".png"))
   rasterImage(fpng, 
-              xleft = pca_jndxyzlumr$PC1[i] - (rw/15), 
-              ybottom = pca_jndxyzlumr$PC2[i]-(rw/9), 
-              xright = pca_jndxyzlumr$PC1[i]+(rw/15), 
-              ytop = pca_jndxyzlumr$PC2[i]+(rw/9))
-  cat(paste0("\r", i, " of ", nrow(pca_jndxyzlumr), " processed"))
+              xleft = pca_dat$PC1[i] - (rw/15), 
+              ybottom = pca_dat$PC2[i]-(rw/9), 
+              xright = pca_dat$PC1[i]+(rw/15), 
+              ytop = pca_dat$PC2[i]+(rw/9))
+  cat(paste0("\r", i, " of ", nrow(pca_dat), " processed"))
 }
 
 dev.off()
