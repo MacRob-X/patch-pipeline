@@ -16,11 +16,11 @@ clade <- "Passeriformes"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
-space <- "lab"
-# select sex (""allspecimens" or "matchedsex")
+space <- "ab"
+# select sex (""all" or "matchedsex")
 # "matchedsex" will subset to only species for which we have at least one
 # male and female specimen
-sex_match <- "all"
+sex_match <- "matchedsex"
 # select metrics c("centr-dist", "nn-k", "nn-count")
 # note that nn-k is EXTREMELY slow to run - needs parallelisation (but will probably still
 # be too slow to run)
@@ -28,7 +28,7 @@ metric <- c("centr-dist", "nn-k", "nn-count")
 # choose hyperparameters (number of nearest neighbours to average over, radius to count
 # neighbours within, whether or not to return nearest neighbour counts as relative proportion)
 nn <- 10
-nn_radius <- 100
+nn_radius <- 0.1
 rad_relative <- TRUE
 
 # Functions ----
@@ -266,13 +266,13 @@ write_metadata <- function(csv_filename, pca_dat, clade, metric, nn, nn_radius, 
 # Load data ----
 
 # load patch data (PCA of whichever colourspace - generated in 02_Patch_Analyse_features.R)
-pca_filename <- paste(clade, "patches.231030.PCAcolspaces", space, "240925", "rds", sep = ".")
+pca_filename <- paste(clade, "patches.231030.PCAcolspaces", "rds", sep = ".")
 pca_all <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
     pca_filename
   )
-)
+)[[space]]
 
 # Analysis - metric production ----
 

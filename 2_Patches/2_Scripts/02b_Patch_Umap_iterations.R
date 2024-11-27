@@ -19,7 +19,7 @@ clade <- "Passeriformes"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
-space <- "lab"
+space <- "ab"
 # select sex ("M", "F", "All")
 sex <- "All"
 # select UMAP parameters

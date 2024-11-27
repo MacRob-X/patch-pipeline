@@ -16,7 +16,7 @@ rm(list=ls())
 clade <- "Passeriformes"
 ## Choose colour space mapping
 ## Note that if usmldbl or usmldblr, will have to manually modify date in filename below
-space <- "lab"
+space <- "ab"
 ## UMAP or PCA space?
 ## FALSE - use the PCA space
 ## TRUE - load a UMAP space from a file

@@ -66,6 +66,12 @@ dat <- reshape(px[,c("species","sex","region","L","a","b")], idvar = c("species"
 rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
 cps.lab <- dat[complete.cases(dat),-c(1:2)]
 
+# ab (Lab but without the L)
+dat <- reshape(px[,c("species","sex","region","a","b")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
+rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
+cps.ab <- dat[complete.cases(dat),-c(1:2)]
+
+
 # CIE
 dat <- reshape(px[,c("species","sex","region","cieX","cieY","cieZ")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
 rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
@@ -107,6 +113,7 @@ non_PCA_colourspaces <- list(usml = cps.usml,
                              xyzlum = cps.xyzlum,
                              xyzlumr = cps.xyzlumr,
                              lab = cps.lab,
+                             ab = cps.ab,
                              cie = cps.cie,
                              sRGB = cps.srgb,
                              hex = cps.hex,
@@ -131,6 +138,7 @@ cps.xyz <- non_PCA_colourspaces$xyz
 cps.xyzlum <- non_PCA_colourspaces$xyzlum
 cps.xyzlumr <- non_PCA_colourspaces$xyzlumr
 cps.lab <- non_PCA_colourspaces$lab
+cps.ab <- non_PCA_colourspaces$ab
 cps.cie <- non_PCA_colourspaces$cie
 cps.srgb <- non_PCA_colourspaces$sRGB
 cps.hex <- non_PCA_colourspaces$hex
@@ -139,7 +147,7 @@ cps.jndxyzlum <- non_PCA_colourspaces$jndxyzlum
 cps.jndxyzlumr <- non_PCA_colourspaces$jndxyzlumr
 
 # perform PCA for each colour space to get colour pattern spaces (excluding hex space - can't PCA a non-numeric)
-spaces <- c("usml", "usmldbl", "usmldblr", "xyz", "xyzlum", "xyzlumr", "lab", "cie", "sRGB", "jndxyz", "jndxyzlum", "jndxyzlumr")
+spaces <- c("usml", "usmldbl", "usmldblr", "xyz", "xyzlum", "xyzlumr", "lab", "ab", "cie", "sRGB", "jndxyz", "jndxyzlum", "jndxyzlumr")
 pca_spaces <- lapply(spaces, function(space, spaces_list) prcomp(spaces_list[[space]]), spaces_list = non_PCA_colourspaces)
 names(pca_spaces) <- spaces
 

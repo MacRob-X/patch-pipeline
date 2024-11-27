@@ -18,7 +18,7 @@ rm(list=ls())
 # custom dispRity metrics
 source(
   here::here(
-    "3_SharedScripts", "2_BetaVersions", "dispRity_metric_functions.R"
+    "3_SharedScripts", "dispRity_metric_functions.R"
   )
 )
 
@@ -26,9 +26,7 @@ source(
 # Select subset of species ("Neoaves" or "Passeriformes")
 clade <- "Passeriformes"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
-# N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
-# (from 240603 to 240806)
-space <- "lab"
+space <- "usml"
 # select sex ("M", "F", "All")
 sex <- "All"
 # select metric ("centr-dist", "nn-k", "nn-count")
@@ -50,13 +48,13 @@ iucn_type <- "nominate"
 # Load data ----
 
 # load patch data (PCA of whichever colourspace - generated in 02_Patch_Analyse_features.R)
-pca_filename <- paste(clade, "patches.231030.PCAcolspaces", space, "240603", "rds", sep = ".")
+pca_filename <- paste(clade, "patches.231030.PCAcolspaces", "rds", sep = ".")
 pca_all <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
     pca_filename
   )
-)
+)[[space]]
 
 # load IUCN Red List data
 iucn_filename <- paste0("iucn_2024_", iucn_type, ".csv")
@@ -393,7 +391,7 @@ png(
     "2_Patches", "4_OutputPlots", "2_Diversity_measures", "1_Diversity_extinction_risk", 
     png_filename
   ),
-  width = 2000, height = 2000/3, res = 150
+  width = 1500, height = 2000/3, res = 150
 )
 p
 dev.off()
