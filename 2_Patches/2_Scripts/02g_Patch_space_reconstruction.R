@@ -160,7 +160,12 @@ for (i in 1:n_axes) {
   axis_max <- pc_maxes[i]
   # generate uniform distribution of n points between min and max and assign to 
   # matrix column
-  theor_pca[, i] <- runif(n_points, min = axis_min, max = axis_max)
+ # theor_pca[, i] <- runif(n_points, min = axis_min, max = axis_max)
+  
+  # OR generate a normal distribution of n points between min and max and assign to
+  # matrix column - estimate sd using StdDev = ((max - min)*.997)/6
+  # as 6 sigma ~99.7% of population for a normal distribution
+  theor_pca[, i] <- rnorm(n_points, sd = ((axis_max - axis_min) * 0.997) / 6 )
 }
 # assign column names
 colnames(theor_pca) <- paste0("PC", 1:n_axes)
