@@ -12,7 +12,7 @@ library(parallel)
 # Load shared functions
 source(
   here::here(
-    "2_Patches", "2_Scripts", "2_BetaVersions", "04_shared_mapping_functions.R"
+    "2_Patches", "2_Scripts", "R", "mapping.R"
   )
 )
 
@@ -36,7 +36,7 @@ avg_par <- "mean"
 # select whether to calculate local or global diversity loss (i.e., mean distance to local or global centroid)
 div_loss_type <- "global"
 # select number of null distributions to generate
-n_sims <- 1000
+n_sims <- 10
 # select whether to exclude grid cells with species richness below a certain threshold (e.g. 5)
 # set as 0 if no threshold wanted
 sr_threshold <- 5
@@ -177,7 +177,7 @@ calc_region_ses <- function(
     iucn_levels <- c("CR", "EN", "VU", "NT", "LC")
     
     # calculate SES for cumulative loss of each IUCN category
-    res_region <- calc_iucn_ses()
+    res_region <- calc_iucn_ses(level = level)
     
     
     
@@ -250,7 +250,7 @@ div_data <- attach_iucn(div_data, iucn)
 gc()
 
 # convert ecoregions to Behrman CEA CRS
-ecoregions <- sf::st_transform(ecoregions, crs = terra::crs(null_rast, proj = TRUE))
+region_shapes <- sf::st_transform(region_shapes, crs = terra::crs(null_rast, proj = TRUE))
 
 # generate individual list of sex-specific species values of metric of interest (keep or discard sexes
 # depending on value of sex_match)
