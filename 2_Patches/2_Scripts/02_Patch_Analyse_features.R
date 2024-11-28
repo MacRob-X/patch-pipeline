@@ -27,10 +27,15 @@ px <- readRDS("./2_Patches/3_OutputData/1_RawColourspaces/Passeriformes.patches.
 # separate colour spaces and make the values for each dimension for each patch a separate column
 # once this is done, the data will be ready to perform PCA to obtain the colour pattern spaces
 
-# USML
+# USML (normalised luminosity)
 dat <- reshape(px[,c("species","sex","region","u","s","m", "l")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
 rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
 cps.usml <- dat[complete.cases(dat),-c(1:2)]
+
+# Raw USML (non-normalised - includes implicit luminance)
+dat <- reshape(px[,c("species","sex","region","uv","sw","mw", "lw")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
+rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
+cps.usmlraw <- dat[complete.cases(dat),-c(1:2)]
 
 # USML+DBL
 dat <- reshape(px[,c("species","sex","region","u","s","m", "l", "lum")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
@@ -107,6 +112,7 @@ cps.jndxyzlumr <- dat[complete.cases(dat),-c(1:2)]
 # these dataframes contain the individual patch colourspaces (e.g. first three columns of first dataframe together make 
 # up the belly patch luminance-free tetrahedral colour space)
 non_PCA_colourspaces <- list(usml = cps.usml,
+                             usmlraw = cps.usmlraw,
                              usmldbl = cps.usmldbl,
                              usmldblr = cps.usmldblr,
                              xyz = cps.xyz,
@@ -132,6 +138,7 @@ non_PCA_colourspaces <- readRDS("./2_Patches/3_OutputData/1_RawColourspaces/Pass
 
 
 cps.usml <- non_PCA_colourspaces$usml
+cps.usmlraw <- non_PCA_colourspaces$usmlraw
 cps.usmldbl <- non_PCA_colourspaces$usmldbl
 cps.usmldblr <- non_PCA_colourspaces$usmldblr
 cps.xyz <- non_PCA_colourspaces$xyz
@@ -147,7 +154,7 @@ cps.jndxyzlum <- non_PCA_colourspaces$jndxyzlum
 cps.jndxyzlumr <- non_PCA_colourspaces$jndxyzlumr
 
 # perform PCA for each colour space to get colour pattern spaces (excluding hex space - can't PCA a non-numeric)
-spaces <- c("usml", "usmldbl", "usmldblr", "xyz", "xyzlum", "xyzlumr", "lab", "ab", "cie", "sRGB", "jndxyz", "jndxyzlum", "jndxyzlumr")
+spaces <- c("usml", "usmlraw", "usmldbl", "usmldblr", "xyz", "xyzlum", "xyzlumr", "lab", "ab", "cie", "sRGB", "jndxyz", "jndxyzlum", "jndxyzlumr")
 pca_spaces <- lapply(spaces, function(space, spaces_list) prcomp(spaces_list[[space]]), spaces_list = non_PCA_colourspaces)
 names(pca_spaces) <- spaces
 
