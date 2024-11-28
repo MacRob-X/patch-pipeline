@@ -51,7 +51,7 @@ pam_res <- "50km"
 pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLife_Shapefiles_GHT/PAMs"
 #pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLife_Shapefiles_v9/PAMs/100km/Behrmann_cea/"
 # use ecoregions or biomes?
-regions <- "biomes"
+regions <- "ecoregions"
 ## END EDITABLE CODE ##
 
 # set dispRity metric
@@ -66,13 +66,13 @@ if(metric == "centr-dist"){
 ## Load data ----
 
 # load patch data (PCA of whichever colourspace - generated in 02_Patch_Analyse_features.R)
-pca_filename <- paste(clade, "patches.231030.PCAcolspaces", space, "240925", "rds", sep = ".")
+pca_filename <- paste(clade, "patches.231030.PCAcolspaces", "rds", sep = ".")
 pca_all <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
     pca_filename
   )
-)
+)[[space]]
 
 # load PAM
 pam_filename <- paste0("PAM_birds_Behrman", pam_res, "_Pres12_Orig12_Seas12_", pam_type, pam_seas, ".rds")
