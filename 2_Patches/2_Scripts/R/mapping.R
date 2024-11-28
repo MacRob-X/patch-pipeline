@@ -148,16 +148,28 @@ set_sex_list <- function(sex_interest = c("all", "male_female", "male", "female"
 }
 
 # extract named vectors of diversity metric for an individual sex
-extract_sex_vals <- function(div_data, metric, sex){
+extract_sex_vals <- function(div_data, sex, metric = NULL){
   
   # generate sex suffix
   sex_suffix <- paste0("-", sex)
   
-  # filter to individual sex
-  metric_sex <- div_data[grepl(sex_suffix, rownames(div_data)), metric, drop = FALSE]
-  rownames(metric_sex) <- sapply(strsplit(rownames(metric_sex), split = "-"), "[", 1)
-  
-  return(metric_sex)
+  # if working with diversity metric data
+  if(!is.null(metric)){
+    
+    # filter to individual sex
+    metric_sex <- div_data[grepl(sex_suffix, rownames(div_data)), metric, drop = FALSE]
+    rownames(metric_sex) <- sapply(strsplit(rownames(metric_sex), split = "-"), "[", 1)
+    
+    return(metric_sex)
+    
+  } else if(is.null(metric)){ # If metric is null, assume we're working with PCA data (i.e., keep all columns)
+    
+    # filter to individual sex  
+    pca_sex <- div_data[grepl(sex_suffix, rownames(div_data)), , drop = FALSE]
+    rownames(pca_sex) <- sapply(strsplit(rownames(pca_sex), split = "-"), "[", 1)
+    
+    return(pca_sex)
+    }
   
 }
 
@@ -171,5 +183,55 @@ get_spp_sex <- function(div_data){
   colnames(spp_sex) <- c("species", "sex")
   
   return(spp_sex)
+  
+}
+
+# Get list of species for which we have matched male and female data
+sex_match_fun <- function(data){
+  
+  # get list of all species
+  species_list <- pca_dat[, c("species", "sex")]
+  
+  # get male species
+  species_m <- species_list[species_list[, "sex"] == "M", "species"]
+  # get female species
+  species_f <- species_list[species_list[, "sex"] == "F", "species"]
+  
+  # identify species present in both male and female
+  spec_to_keep <- intersect(species_m, species_f)
+  
+  return(spec_to_keep)
+  
+}
+
+# Subset to only species we want to keep (e.g. species identifed by sex_match())
+subset_sex_match <- function(data, spec_to_keep){
+  
+  data <- data[data[, "species"] %in% spec_to_keep, ]
+  
+  # remove species and sex columns
+  data <- data[, !colnames(data) %in% c("species", "sex")]
+  
+  # set class to numeric matrix (for use with dispRity)
+  class(data) <- "numeric"
+  
+  return(data)
+  
+}
+
+# add species and sex columns
+pca_spp_sex <- function(pca_vals){
+  
+  # extract species and sex
+  spp_sex <- t(sapply(strsplit(rownames(pca_vals), split = "-"), "[", 1:2))
+  
+  # add species and sex columns
+  pca_vals <- cbind(
+    pca_vals,
+    species = spp_sex[, 1],
+    sex = spp_sex[, 2]
+  )
+  
+  return(pca_vals)
   
 }
