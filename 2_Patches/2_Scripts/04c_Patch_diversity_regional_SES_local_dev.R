@@ -12,6 +12,7 @@ rm(list=ls())
 # Load libraries
 library(raster)
 library(parallel)
+library(dispRity)
 
 # Load shared functions
 source(
@@ -73,6 +74,13 @@ nquants <- 10
 plot_sr <- TRUE
 ## Use viridis_c, viridis turbo palette or custom colour palette?
 palette_choice <- "viridis"
+
+
+# Functions ----
+# make wrapper function for averaging (allows selection of average type e.g. mean, median)
+avg <- function(vals, avg_type, na.rm = TRUE){
+  return(get(avg_type)(vals, na.rm = na.rm))
+}
 
 # Load data ----
 
@@ -155,3 +163,131 @@ sexes <- set_sex_list(sex_interest)
 
 # now apply a function to extract named vector lists of values for each sex individually
 sexed_pca_list <- lapply(sexes, extract_sex_vals, div_data = pca_dat)
+names(sexed_pca_list) <- sexes
+
+
+
+## Functionalise this later
+
+# set dispRity metric
+if(metric == "centr-dist"){
+  metric_get <- "centroids"
+} else if (metric == "nn-k"){
+  metric_get <- "mean.nn.dist"
+}else if (metric == "nn-count"){
+  metric_get <- "count.neighbours"
+}
+
+# set up place to store simulations
+a <- n_sims # change depending on number of simulations  
+sims <- matrix(NA, nrow=1, ncol = a) # place to store simulations for SES
+
+# set up results matrix
+results <- matrix(NA, nrow=5, ncol = 6)
+colnames(results) <- c("iucn", "species_richness", "raw", "null_mean", "null_sd", "null_se")
+
+# get male pca data
+pca_M <- sexed_pca_list$M
+
+# set region of interest
+roi <- region_shapes[5, ]
+
+# create null rast, subsetted to extent of ecoregion
+# first assign values to null_rast to keep track of grid cells
+null_rast_sub <- null_rast
+# get number of grid cells in full raster
+ncells <- length(terra::values(null_rast))
+terra::values(null_rast_sub) <- 1:ncells
+# crop raster to ecoregion extent
+null_rast_sub <- terra::crop(null_rast_sub, roi)
+# mask raster to ecoregion extent
+null_rast_sub <- terra::mask(null_rast_sub, roi)
+
+
+# use values of subsetted raster to subset PAM to ROI
+pam_sub <- pam[terra::values(null_rast_sub), ]
+
+# get species which are present in subsetted PAM
+if(length(terra::values(null_rast_sub)) < 2){
+  # if ROI consists of 1 or fewer grid cells
+  species_pres <- names(which(!is.na(pam_sub)))
+} else {
+  # if ROI consists of more than 1 grid cell
+  species_pres <- names(which(apply(pam_sub, 2, function(x) any(!(is.na(x))))))
+}
+
+# get collections of species within region with threat levels sequentially trimmed
+all <- species_pres
+no_CR <- iucn[iucn$species_birdtree %in% species_pres & iucn$iucn_cat != "CR", "species_birdtree"]
+no_EN <- iucn[iucn$species_birdtree %in% species_pres & iucn$iucn_cat != "CR" & iucn$iucn_cat != "EN", "species_birdtree"]
+no_VU <- iucn[iucn$species_birdtree %in% species_pres & iucn$iucn_cat != "CR" & iucn$iucn_cat != "EN" & iucn$iucn_cat != "VU", "species_birdtree"]
+no_NT <- iucn[iucn$species_birdtree %in% species_pres & iucn$iucn_cat != "CR" & iucn$iucn_cat != "EN" & iucn$iucn_cat != "VU" & iucn$iucn_cat != "NT", "species_birdtree"]
+
+
+
+# clip PCA data to only species present in regions (all IUCN levels)
+pca_region <- pca_M[all, ]
+
+# calculate average of metric of all species in ROI
+roi_metric_avg <- avg(dispRity(pca_region, metric = get(metric_get))$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+
+# add species richness and average metric to results table
+results[1, "species_richness"] <- length(all)
+results[1, "raw"] <- roi_metric_avg
+
+# Now do the same but for CR species only, comparing to n simulations of random species loss to calculate
+# SES
+
+# clip PCA data to only species present in regions (no CR species)
+pca_subset <- pca_region[no_CR, ]
+
+# calculate mean distance to centroid of all species in ROI in IUCN cats of interest
+roi_metric_avg <- avg(dispRity(pca_subset, metric = get(metric_get))$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+
+# add species richness and average metric to results table
+results[2, "species_richness"] <- length(no_CR)
+results[2, "raw"] <- roi_metric_avg
+
+# for parallelisation, set up a cluster using the number of cores (2 less than total number of laptop cores)
+no_cores <- parallel::detectCores() - 2
+cl <- parallel::makeCluster(no_cores)
+# export necessary objects to the cluster
+parallel::clusterExport(cl, c("all", "no_CR", "no_EN", "no_VU", "no_NT", "pca_region", "metric_get", "dispRity", "avg", "avg_par", metric_get))
+
+# Calculate SES compared to simulations of random loss of species
+sims[1, ] <- unlist(
+  parallel::parLapply(
+    cl = cl,
+    1:ncol(sims), 
+    function(j) {
+      
+      coms <- sample(x = all, size = length(no_CR), replace = FALSE)
+      trait_vec <- matrix(pca_region[coms, ], ncol = dim(pca_region)[2])
+      
+      # Calculate the disparity value for the current simulation (column j)
+      disparity_value <- avg(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+      
+      return(disparity_value)
+    }
+  )
+)
+
+# add to results table
+results[2, "null_mean"] <- mean(sims)
+results[2, "null_sd"] <- sd(sims)
+results[2, "null_se"] <- sd(sims)/sqrt(length(sims))
+
+
+# check if there are as many or more species in ROI than the threshold SR
+if(length(species_pres) >= sr_threshold){
+  
+  # if there are enough species, calculate mean distance to centroid of all species in space
+  
+  
+  
+} else {
+  
+  return(NA)
+  
+}
+
