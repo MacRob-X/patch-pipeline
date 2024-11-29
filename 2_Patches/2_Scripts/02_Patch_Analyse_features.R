@@ -76,6 +76,10 @@ dat <- reshape(px[,c("species","sex","region","a","b")], idvar = c("species","se
 rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
 cps.ab <- dat[complete.cases(dat),-c(1:2)]
 
+# L (Lab but only the L)
+dat <- reshape(px[,c("species","sex","region","L")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
+rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
+cps.L <- dat[complete.cases(dat),-c(1:2)]
 
 # CIE
 dat <- reshape(px[,c("species","sex","region","cieX","cieY","cieZ")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
@@ -120,6 +124,7 @@ non_PCA_colourspaces <- list(usml = cps.usml,
                              xyzlumr = cps.xyzlumr,
                              lab = cps.lab,
                              ab = cps.ab,
+                             L = cps.L,
                              cie = cps.cie,
                              sRGB = cps.srgb,
                              hex = cps.hex,
@@ -146,6 +151,7 @@ cps.xyzlum <- non_PCA_colourspaces$xyzlum
 cps.xyzlumr <- non_PCA_colourspaces$xyzlumr
 cps.lab <- non_PCA_colourspaces$lab
 cps.ab <- non_PCA_colourspaces$ab
+cps.L <- non_PCA_colourspaces$L
 cps.cie <- non_PCA_colourspaces$cie
 cps.srgb <- non_PCA_colourspaces$sRGB
 cps.hex <- non_PCA_colourspaces$hex
@@ -154,7 +160,7 @@ cps.jndxyzlum <- non_PCA_colourspaces$jndxyzlum
 cps.jndxyzlumr <- non_PCA_colourspaces$jndxyzlumr
 
 # perform PCA for each colour space to get colour pattern spaces (excluding hex space - can't PCA a non-numeric)
-spaces <- c("usml", "usmlraw", "usmldbl", "usmldblr", "xyz", "xyzlum", "xyzlumr", "lab", "ab", "cie", "sRGB", "jndxyz", "jndxyzlum", "jndxyzlumr")
+spaces <- c("usml", "usmlraw", "usmldbl", "usmldblr", "xyz", "xyzlum", "xyzlumr", "lab", "ab", "L", "cie", "sRGB", "jndxyz", "jndxyzlum", "jndxyzlumr")
 pca_spaces <- lapply(spaces, function(space, spaces_list) prcomp(spaces_list[[space]]), spaces_list = non_PCA_colourspaces)
 names(pca_spaces) <- spaces
 
