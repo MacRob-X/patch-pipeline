@@ -81,9 +81,16 @@ load_regions <- function(regions){
 }
 
 # extract null raster from PAM file
-extract_null_rast <- function(pam_raw){
+extract_null_rast <- function(pam_raw, rast_type = "terra"){
   
-  return(terra::rast(pam_raw[[2]]))
+  # return terra-type raster
+  if(rast_type == "terra"){
+    return(terra::rast(pam_raw[[2]]))
+  } else if(rast_type == "raster"){
+    # return raster-type raster
+    return(pam_raw[[2]])
+  }
+  
   
 }
 
@@ -233,5 +240,30 @@ pca_spp_sex <- function(pca_vals){
   )
   
   return(pca_vals)
+  
+}
+
+# combine individual rasters stored in a list into a single multilayer raster
+combine_raster_list <- function(raster_list){
+  
+  require(terra)
+  
+  # get number of rasters in list
+  n_rasters <- length(raster_list)
+  
+  # extract elements and combine to single raster
+  # (unfortunately I think the only way to do this is recursively)
+  multi_rast <- raster_list[[1]]
+  for(n in 2:n_rasters){
+    # combine multilayer raster with new layer
+    multi_rast <- c(multi_rast, raster_list[[n]])
+  }
+  
+  # set layer names as element names from list
+  if(!is.null(names(raster_list))){
+    names(multi_rast) <- names(raster_list)
+  }
+  
+  return(multi_rast)
   
 }
