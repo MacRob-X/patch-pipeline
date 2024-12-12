@@ -310,7 +310,15 @@ region_results <- region_results[rows_to_keep, ]
 # rename results df elements (so the plotting works)
 names(results_dfs) <- sexes
 
-
+# save intermediate results
+results_filename <- paste0(paste(clade, space, "regionalSESplotdata", metric, avg_par, regions, paste0(n_sims, "sims"), paste0(iucn_type, "iucn"), sex_match, pam_res, pam_type, pam_seas, sep = "_"), ".rds")
+saveRDS(
+  results_dfs, 
+  here::here(
+    "2_Patches", "3_OutputData", "6_Spatial_mapping", "2_Regional_diversity_SES", pam_res, space,
+    results_filename
+  )
+)
 
 # plot results ----
 
@@ -347,19 +355,26 @@ region_results[, column_names] <- sapply(sf::st_drop_geometry(region_results[, c
 
 ## PRODUCE RASTER OF RESULTS - layer for each attribute
 # produce null raster with a layer for each attribute (e.g., M_ses_CR, M_ses_EN etc.)
-# get null raster from raw pam
+# load PAM
+pam_filename <- paste0("PAM_birds_Behrman", pam_res, "_Pres12_Orig12_Seas12_", pam_type, pam_seas, ".rds")
+pam_raw <- readRDS(
+  paste(pams_filepath, pam_filename, sep = "/")
+)
 # extract null raster from PAM file
 null_rast <- extract_null_rast(pam_raw, rast_type = "raster")
-results_raster <- fasterize::fasterize(region_results, null_rast, field = c("M_ses_CR"))
+# remove raw PAM (for RAM)
+rm(pam_raw)
+# produce list of rasterlayers of each results - each SES size (e.g. -CR, -EN etc.) has a raster, for
+# each sex
 results_raster <- lapply(column_names, fasterize::fasterize, sf = region_results, raster = null_rast)
 # convert elements to spatrasters
 results_raster <- lapply(results_raster, terra::rast)
+# combine list elements into a single multilayer raster, with a layer for each element
 results_raster <- terra::rast(results_raster)
 names(results_raster) <- column_names
-# remove the SES of all species (which are always 0 by definition)
+# remove the SES of all species - i.e., pre-removing IUCN catefories - which are always 0 by definition
 results_raster <- subset(results_raster, paste0(sexes, "_ses_all"), negate = TRUE)
-# remove raw PAM and collect garbage
-rm(pam_raw)
+# collect garbage
 gc()
 
 
@@ -373,30 +388,17 @@ new_vals[new_vals != -2] <- NA
 terra::values(thresh_rast) <- new_vals
 
 
-plot(results_raster[[1]])
-terra::polys(terra::as.polygons(thresh_rast[[1]]), border = "black", lwd = 1.5)
 
-# plot all layers - THIS CURRENTLY WORKS but with individual legends
-layers <- names(results_raster)
-n_cols <- length(sexes)
-n_rows = length(layers) %/% n_cols
-par(mfcol = c(n_rows, n_cols))
-for(layer in layers){
-  
-  # plot raster of values
-  plot(results_raster[[layer]], main = layer)
-  
-  # plot polygon of values < 2
-  terra::polys(terra::as.polygons(thresh_rast[[layer]]), border = "black", lwd = 1.5)
-  
-}
 
-# same, but with layout matrix
-png("test_image.png", width = 1450, height = 1550, res = 72, pointsize = 20)
+## Plot ---
+## all layers in one plot, with regions with SES < -2 outlined (if requested)
+## Set Outlining parameter
+outline <- TRUE
+
 # First define range for legend and colour scale (make it very slightly higher/lower
 # than true range to stop the max/min regions being whited out)
 leg_range <- c(min(terra::values(results_raster), na.rm = TRUE), 
-              max(terra::values(results_raster), na.rm = TRUE))
+               max(terra::values(results_raster), na.rm = TRUE))
 leg_increm <- (max(leg_range) - min(leg_range)) / 100
 leg_range <- c(min(leg_range) - leg_increm,
                max(leg_range) + leg_increm)
@@ -405,46 +407,68 @@ leg_fill <- viridis::viridis(100, direction = -1)
 # define legend title
 leg_title <- paste0("SES value (", metric, ")")
 
+# get raster layers
 layers <- names(results_raster)
+
+# generate alphabetical labels for plots
+labels <- LETTERS[1:length(layers)]
+names(labels) <- layers
+
+# set number of columns and rows
+n_cols <- length(sexes)
+n_rows = (length(layers) %/% n_cols) + 1
+# Define layout matrix of plots within figure
 layout_matrix <- matrix(
   c(1, 5, 
     2, 6, 
     3, 7, 
     4, 8, 
-    9, 9), 
-  nrow = 5, ncol = 2, byrow = TRUE
+    9, 9), # legend across two rows at the bottom
+  nrow = n_rows, ncol = n_cols, byrow = TRUE
+)
+
+# set png filename
+png_filename <- paste0(paste(clade, space, "regionalSES_local", metric, avg_par, regions, paste0(n_sims, "sims"), paste0(iucn_type, "iucn"), sex_match, pam_res, pam_type, pam_seas, sep = "_"), ".png")
+# initialise png saving
+png(
+  here::here(
+    "2_Patches", "4_OutputPlots", "3_Spatial_mapping", "2_Regional_diversity_SES", pam_res, space,
+    png_filename
+  ), 
+  width = 1450, height = 1550, res = 72, pointsize = 20
   )
+
+# set layout of plots
 layout(
   heights = c(1, 1, 1, 1, 0.5),
   mat = layout_matrix
   )
 
-# generate A-H labels for plots
-labels <- LETTERS[1:8]
-names(labels) <- layers
 
 # add map plots (no legends)
 for(layer in layers){
   
   # plot raster of values
   plot(
-         results_raster[[layer]],         # layer to plot
-         main = labels[layer], loc.main = c(-16500,7500), # title and position
-         legend = FALSE,                  # no legend
-         col = leg_fill,                  # colour scale
-         range = leg_range,               # colour scale range
-         mar = c(1.1, 1.2, 2.1, 1.2),
-         pax = list(tick = 0, lab = 0)    # no ticks or labels on axes
+    results_raster[[layer]],         # layer to plot
+    main = labels[layer], loc.main = c(-16500,7500), # title and position
+    legend = FALSE,                  # no legend
+    col = leg_fill,                  # colour scale
+    range = leg_range,               # colour scale range
+    mar = c(1.1, 1.2, 2.1, 1.2),
+    pax = list(tick = 0, lab = 0)    # no ticks or labels on axes
        )
   
-  # plot polygon of values < 2
-  terra::polys(terra::as.polygons(thresh_rast[[layer]]), 
-               col = "#f28383", density = 10, angle = 45,
-               border = "#f28383", lwd = 1)
+  # plot polygon of values < 2 (if requested)
+  if(outline == TRUE){
+    terra::polys(terra::as.polygons(thresh_rast[[layer]]), 
+                col = "#f28383", density = 10, angle = 45,
+                border = "#f28383", lwd = 1)
+    }
   
 }
 # add combined legend
-par(mar = c(8, 12, 1, 12))  # Reduce margins for the legend
+par(mar = c(8, 12, 1, 12))  # set margins for the legend
 image(x = seq(leg_range[1], leg_range[2], length.out = 100), 
       y = 1, 
       z = matrix(seq(leg_range[1], leg_range[2], length.out = 100), ncol = 1), 
@@ -457,167 +481,10 @@ axis(1, at = seq(leg_range[1], leg_range[2], length.out = 5),
      cex.axis = 1.4)
 mtext(leg_title, side = 1, line = 3, cex = 1)
 
+# end png device
 dev.off()
 
 
 
 
-plot(1:10, 1:10, type = "n", axes = FALSE, xlab = "", ylab = "")  # Placeholder for legend plot
-image(1, seq(min(leg_range), max(leg_range), length.out = 10), 
-      t(seq_along(leg_range)), col = leg_fill, axes = FALSE)
-axis(1, at = seq(min(leg_range), max(leg_range), length.out = 5), 
-     labels = round(seq(min(leg_range), max(leg_range), length.out = 5), 2))
-mtext(leg_title, side = 1, line = 2)
-image(z = leg_vals, t(seq_along(leg_range)), col = leg_fill, axes = FALSE)
-
-
-
-plot(results_raster[[1]], axes = FALSE, legend = TRUE, plg = c(x = "top"))
-legend("bottom", legend = paste0("SES value (", metric, ")"),)
-add_legend
-plot(results_raster[[1]], type = "n", axes = FALSE, legend = TRUE,  size = c(1, 1))
-
-
-
-# plot combined legend
-plot(1, type = "n", axes=FALSE, xlab="", ylab="")
-terra::add_legend("bottom", legend = "SES")
-legend("bottom", legend = "SES")
-legend(x = "top",inset = 0,
-       legend = "SES", 
-       col=plot_colors, lwd=5, cex=.5, horiz = TRUE)
-
-
-# produce polygon of regions for which SES <= -2
-results_trunc <- results_raster
-values(results_trunc) <- ifelse(values(results_raster) <= -2, values(results_raster), NA)
-loss_polys <- lapply(names(results_trunc), function(layer){
-  
-  polygon <- terra::as.polygons(results_trunc[[layer]])
-  
-})
-
-# produce tidy df of boundaries - NOTE: THIS DOESN'T CURRENTLY WORK FOR WAHT i WANT IT TO DO (create tidy df of polygons)
-polys_df <- lapply(1:length(loss_polys), function(polygon){
-  polygon_df <- as.data.frame(loss_polys[[polygon]])
-  polygon_df$lyr <- names(results_raster)[polygon]
-  return(polygon_df)
-})
-polys_df <- dplyr::bind_rows(polys_df)
-
-# produce tidy df of SES values
-results_tidy_df <- as.data.frame(results_raster, xy = TRUE)
-results_tidy_df <- tidyr::pivot_longer(results_tidy_df, cols = names(results_raster), names_to = "lyr", values_to = "value")
-
-# plot with boundaries of SES <= 2
-ggplot() + 
-  geom_raster(data = results_tidy_df, aes(x = x, y = y, fill = value)) +
- # geom_path(data = polys_df, aes(x = x, y = y, group = group), color = "white") +
-  facet_wrap(~lyr) +
-  scale_fill_viridis_c()
-
-# plot raster
-library(ggplot2)
-library(tidyterra)
-
-# THIS CURRENTLY ALMOST WORKS but plots the threshold polygon of the first layer multiple times,
-# rather than that of each layer
-ggplot() + 
-  geom_spatraster(data = results_raster) + 
-  geom_spatvector(data = terra::as.polygons(thresh_rast), colour = "white", fill = NA) + 
- # geom_sf(data = loss_polys[[1]], colour = "white", fill = NA) + 
-  facet_wrap(~lyr, ncol = 2, dir = "v") + 
-  scale_fill_viridis_c(direction = -1, na.value = "transparent")
-
-# create individual polygons of each layer
-layers <- names(results_raster)
-thresh_polygons <- lapply(layers, function(layer){
-  
-  polygon <- terra::as.polygons(thresh_rast[[layer]])
-  
-  # ensure correct CRS
-  polygon <- terra::project(polygon, crs(results_raster))
-  
-  # ensure correct extent
-  polygon <- terra::crop(polygon, terra::ext(results_raster))
-  
-  return(polygon)
-  
-})
-names(thresh_polygons) <- layers
-# combine into spatvectorcollection
-thresh_polygons_svc <- terra::svc(thresh_polygons)
-
-# plot with base R - THIS ALMOST WORKS - plotting each individually works, but when you set add = TRUE
-# the overlay fails for some reason
-
-
-
-terra::plot(results_raster)
-par(new = TRUE, bg = "transparent", mfrow = c(n_rows, n_cols))
-terra::plot(thresh_polygons_svc, box = FALSE, axes = FALSE, main = "")
-terra::plot(thresh_polygons_svc, box = FALSE, axes = FALSE, add = TRUE)
-
-########## ALMOST WORKING - 2024-12-10
-
-# TRY SAVING AND OVERLAYING
-# set number of columns and rows
-n_cols <- length(sexes)
-n_rows = length(layers) %/% n_cols
-
-# set legend range
-leg_range = c(max(terra::values(results_raster), na.rm = TRUE), min(terra::values(results_raster), na.rm = TRUE))
-
-# save rasters png
-png("rasters.png", width = 2000, height = 1000)
-par(mfrow = c(n_rows, n_cols))
-terra::plot(results_raster, mar = c(0,0,0,0), buffer = FALSE)
-dev.off()
-# save polygons png with transparent background
-png("polygons.png", bg = "transparent", width = 2000, height = 1000)
-par(mfrow = c(n_rows, n_cols))
-terra::plot(thresh_polygons_svc, box = TRUE, axes = FALSE, main = "", buffer = FALSE, mar = c(0,0,0,0))
-dev.off()
-# overlay polygons png on rasters png
-terrainr::combine_overlays(
-  "rasters.png",
-  "polygons.png",
-  output_file = "rasters_and_polygons.png"
-  
-)
-
-ggplot() + 
-  geom_spatvector(data = thresh_polygons, colour = "black", fill = NA) + 
-  facet_wrap(~lyr, ncol = 2, dir = "v")
-
-# wrapper function to feed into apply
-plot_layer <- function(lyr){
-  
-  p <- ggplot() + 
-    geom_sf(data = region_results, aes(fill = as.numeric(get(lyr)), colour = as.numeric(get(lyr)))) + 
-    scale_fill_viridis_c(name = lyr, option = "viridis", direction = -1) + 
-    scale_colour_viridis_c(name = lyr, option = "viridis", direction = -1)
-  p + labs(fill = lyr)
-  return(p)
-}
-layers <- colnames(results_dfs[["F"]])[2:5]
-
-plots <- lapply(layers, plot_layer)
-
-png(paste(clade, regions, "ses_F.png", sep = "_"), width = 2000, height = 1000)
-gridExtra::grid.arrange(grobs = plots, nrow = 2)
-dev.off()
-
-
-# Format results
-
-# save intermediate results
-results_filename <- paste0(paste(clade, space, "regionalSESplotdata", metric, avg_par, regions, paste0(n_sims, "sims"), paste0(iucn_type, "iucn"), sex_match, pam_res, pam_type, pam_seas, sep = "_"), ".rds")
-saveRDS(
-  results_dfs, 
-  here::here(
-    "2_Patches", "3_OutputData", "6_Spatial_mapping", "2_Regional_diversity_SES", pam_res, space,
-    results_filename
-    )
-  )
 
