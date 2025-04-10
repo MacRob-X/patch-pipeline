@@ -19,16 +19,24 @@ clade <- "Passeriformes"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
-space <- "ab"
-# select sex ("M", "F", "All")
-sex <- "All"
+space <- "lab"
+# Restrict to only species for which we have male and female data?
+mf_restrict <- TRUE
 # select UMAP parameters
 nn <- "default"
 min_dist <- "default"
 ## END EDITABLE CODE
 
+# set parameter for sex restriction
+if(mf_restrict == TRUE){
+  spec_sex <- "matchedsex"
+} else{
+  spec_sex <- "allspecimens"
+}
+
 # load patch data (PCA of whichever colourspace - generated in 02_Patch_Analyse_features.R)
-pca_filename <- paste(clade, "patches.231030.PCAcolspaces", "rds", sep = ".")
+# set filename
+pca_filename <- paste(clade, spec_sex, "patches.231030.PCAcolspaces.rds", sep = ".")
 pca_all <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
@@ -52,7 +60,7 @@ taxo <- read.csv(
 canon_umap <- umap::umap(pca_all$x, preserve.seed = TRUE)
 
 # save
-umap_filename <- paste(clade, "patches", space, "pca", "canonUMAP", "rds", sep = ".")
+umap_filename <- paste(clade, spec_sex, "patches", space, "pca", "canonUMAP", "rds", sep = ".")
 saveRDS(canon_umap, 
         file = here::here(
           "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP", 

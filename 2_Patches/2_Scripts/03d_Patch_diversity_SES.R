@@ -10,7 +10,7 @@ library(dplyr)
 library(dispRity)
 library(ggplot2)
 library(parallel)
-
+library(extrafont)
 
 # clear environment
 rm(list=ls())
@@ -26,9 +26,9 @@ source(
 # Select subset of species ("Neoaves" or "Passeriformes")
 clade <- "Passeriformes"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
-space <- "usml"
+space <- "usmlraw"
 # select sex ("M", "F", "All")
-sex <- "All"
+sex <- "F"
 # select metric ("centr-dist", "nn-k", "nn-count")
 # note that nn-k is EXTREMELY slow to run - needs parallelisation (but will probably still
 # be too slow to run)
