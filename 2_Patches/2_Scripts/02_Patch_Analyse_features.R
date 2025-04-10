@@ -16,9 +16,9 @@ source("./2_Patches/2_Scripts/R/patch_plotting.R")
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Passeriformes"
+clade <- "Neoaves"
 # Restrict to only species for which we have male and female data?
-mf_restrict <- FALSE
+mf_restrict <- TRUE
 
 # Input data ----
 # (this is the output from 01_Patch_Colourspace_mapping_vX.R)
@@ -150,7 +150,7 @@ if(mf_restrict == TRUE){
 
 # save
 saveRDS(
-  non_PCA_colourspaces,
+  pca_spaces,
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA", 
     pca_filename
