@@ -14,10 +14,33 @@ source("./2_Patches/2_Scripts/R/patch_plotting.R")
 
 # ------------- #
 
+## EDITABLE CODE ##
+# Select subset of species ("Neoaves" or "Passeriformes")
+clade <- "Passeriformes"
+# Restrict to only species for which we have male and female data?
+mf_restrict <- FALSE
+
 # Input data ----
 # (this is the output from 01_Patch_Colourspace_mapping_vX.R)
+px_filename <- paste0(clade, ".patches.231030.rawcolspaces.rds")
+px <- readRDS(
+  here::here(
+    "2_Patches", "3_OutputData", "1_RawColourSpaces", 
+    px_filename
+  )
+)
 
-px <- readRDS("./2_Patches/3_OutputData/1_RawColourspaces/Passeriformes.patches.231030.rawcolspaces.rds")
+# Restrict to only males and females, if requested
+if(mf_restrict == TRUE){
+  
+  # get species for which we have both male AND female data
+  males <- unique(px[px[["sex"]] == "M", "species"])
+  females <- unique(px[px[["sex"]] == "F", "species"])
+  mf_species <- males[!is.na(match(males, females))]
+  
+  px <- px[px[["species"]] %in% mf_species, ]
+  
+}
 
 
 # ------------- #
@@ -27,36 +50,44 @@ px <- readRDS("./2_Patches/3_OutputData/1_RawColourspaces/Passeriformes.patches.
 # separate colour spaces and make the values for each dimension for each patch a separate column
 # once this is done, the data will be ready to perform PCA to obtain the colour pattern spaces
 
-# USML (normalised luminosity)
-dat <- reshape(px[,c("species","sex","region","u","s","m", "l")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
-rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
-cps.usml <- dat[complete.cases(dat),-c(1:2)]
+# set up list of columns to extract from px
+spaces_columns <- list(
+  usml = c("species","sex","region", "u", "s", "m", "l"),
+  usmlraw = c("species","sex","region", "uv", "sw", "mw", "lw"),
+  usmldbl = c("species","sex","region","u","s","m", "l", "lum"),
+  usmldblr = c("species","sex","region","u","s","m", "l", "lumr"),
+  xyz = c("species","sex","region","x","y","z"),
+  xyzlum = c("species","sex","region","x","y","z","dbl"),
+  lab = c("species","sex","region","L","a","b"),
+  ab = c("species","sex","region","a","b"),   # ab (Lab but without the L)
+  L = c("species","sex","region","L"),   # L (Lab but only the L)
+  cie = c("species","sex","region","cieX","cieY","cieZ"),
+  sRGB = c("species","sex","region","sRGB.r","sRGB.g","sRGB.b"),
+  hex = c("species","sex","region","hex"),
+  jndxyz = c("species","sex","region","x.jnd","y.jnd","z.jnd"),
+  jndxyzlum = c("species","sex","region","x.jnd","y.jnd","z.jnd","lum.jnd"),
+  jndxyzlumr = c("species","sex","region","x.jndlumr","y.jndlumr","z.jndlumr","lum.jndlumr")
+)
 
-# Raw USML (non-normalised - includes implicit luminance)
-dat <- reshape(px[,c("species","sex","region","uv","sw","mw", "lw")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
-rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
-cps.usmlraw <- dat[complete.cases(dat),-c(1:2)]
+# put data into the correct format to perform PCA
+# split into separate colour spaces and make the values for each dimension for each patch 
+# a separate column
+# once this is done, the data will be ready to perform PCA to obtain the colour pattern spaces
 
-# USML+DBL
-dat <- reshape(px[,c("species","sex","region","u","s","m", "l", "lum")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
-rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
-cps.usmldbl <- dat[complete.cases(dat),-c(1:2)]
+# define function to reshape data
+reshape_data <- function(space_cols, pixel_data){
+  
+  dat <- reshape(px[, space_cols], idvar = c("species", "sex"), timevar = c("region"), direction = "wide")
+  rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
+  return(dat[complete.cases(dat),-c(1:2)])
+  
+}
 
-# USML+DBLr (scaled luminance)
-dat <- reshape(px[,c("species","sex","region","u","s","m", "l", "lumr")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
-rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
-cps.usmldblr <- dat[complete.cases(dat),-c(1:2)]
+# apply function across all space
+non_PCA_colourspaces <- lapply(spaces_columns, reshape_data, pixel_data = px)
 
-# TCS xyz
-dat <- reshape(px[,c("species","sex","region","x","y","z")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
-rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
-cps.xyz <- dat[complete.cases(dat),-c(1:2)]
-
-# TCS xyzlum
-dat <- reshape(px[,c("species","sex","region","x","y","z","dbl")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
-rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
-cps.xyzlum <- dat[complete.cases(dat),-c(1:2)]
-
+# Have to do TCS xyzlumr (rescaled lum) separately as it involves rescaling the lum
+# dimension
 # TCS xyzlumr (rescaled)
 vtcs <- data.frame(u=c(1,0,0,0), s=c(0,1,0,0), m=c(0,0,1,0), l=c(0,0,0,1))
 d <- max(dist(tcspace(vtcs)[,c("x","y","z")])) # use this value to scale the lum variable (dbl) such that the distance between maximally different lum values (0 and 1) now equals d (= max distance in TCS)
@@ -64,100 +95,44 @@ tmp <- px
 tmp$dbl <- tmp$dbl * d
 dat <- reshape(tmp[,c("species","sex","region","x","y","z","dbl")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
 rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
-cps.xyzlumr <- dat[complete.cases(dat),-c(1:2)]
-
-# Lab
-dat <- reshape(px[,c("species","sex","region","L","a","b")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
-rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
-cps.lab <- dat[complete.cases(dat),-c(1:2)]
-
-# ab (Lab but without the L)
-dat <- reshape(px[,c("species","sex","region","a","b")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
-rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
-cps.ab <- dat[complete.cases(dat),-c(1:2)]
-
-# L (Lab but only the L)
-dat <- reshape(px[,c("species","sex","region","L")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
-rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
-cps.L <- dat[complete.cases(dat),-c(1:2)]
-
-# CIE
-dat <- reshape(px[,c("species","sex","region","cieX","cieY","cieZ")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
-rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
-cps.cie <- dat[complete.cases(dat),-c(1:2)]
-
-# sRGB
-dat <- reshape(px[,c("species","sex","region","sRGB.r","sRGB.g","sRGB.b")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
-rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
-cps.srgb <- dat[complete.cases(dat),-c(1:2)]
-
-# hex
-dat <- reshape(px[,c("species","sex","region","hex")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
-rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
-cps.hex <- dat[complete.cases(dat),-c(1:2)]
-
-# jnd xyz
-dat <- reshape(px[,c("species","sex","region","x.jnd","y.jnd","z.jnd")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
-rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
-cps.jndxyz <- dat[complete.cases(dat),-c(1:2)]
-
-# jnd xyzlum
-dat <- reshape(px[,c("species","sex","region","x.jnd","y.jnd","z.jnd","lum.jnd")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
-rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
-cps.jndxyzlum <- dat[complete.cases(dat),-c(1:2)]
+non_PCA_colourspaces$xyzlumr <- dat[complete.cases(dat),-c(1:2)]
 
 
-# jnd xyzlumr
-dat <- reshape(px[,c("species","sex","region","x.jndlumr","y.jndlumr","z.jndlumr","lum.jndlumr")], idvar = c("species","sex"), timevar = c("region"), direction = "wide")
-rownames(dat) <- matrix(apply(dat[,c("species","sex")], 1, paste, collapse='-'), ncol=1)
-cps.jndxyzlumr <- dat[complete.cases(dat),-c(1:2)]
-
-# collate into one list for saving
-# these dataframes contain the individual patch colourspaces (e.g. first three columns of first dataframe together make 
-# up the belly patch luminance-free tetrahedral colour space)
-non_PCA_colourspaces <- list(usml = cps.usml,
-                             usmlraw = cps.usmlraw,
-                             usmldbl = cps.usmldbl,
-                             usmldblr = cps.usmldblr,
-                             xyz = cps.xyz,
-                             xyzlum = cps.xyzlum,
-                             xyzlumr = cps.xyzlumr,
-                             lab = cps.lab,
-                             ab = cps.ab,
-                             L = cps.L,
-                             cie = cps.cie,
-                             sRGB = cps.srgb,
-                             hex = cps.hex,
-                             jndxyz = cps.jndxyz,
-                             jndxyzlum = cps.jndxyzlum,
-                             jndxyzlumr = cps.jndxyzlumr)
 
 
-saveRDS(non_PCA_colourspaces, "./2_Patches/3_OutputData/1_RawColourspaces/Passeriformes.patches.231030.prePCAcolspaces.rds")
+# set filename
+if(mf_restrict == TRUE){
+  prepca_filename <- paste(clade, "matchedsex", "patches.231030.prePCAcolspaces.rds", sep = ".")
+} else{
+  prepca_filename <- paste(clade, "allspecimens", "patches.231030.prePCAcolspaces.rds", sep = ".")
+}
 
+
+saveRDS(
+  non_PCA_colourspaces,
+  here::here(
+    "2_Patches", "3_OutputData", "1_RawColourSpaces", 
+    prepca_filename
+  )
+)
 
 # Perform PCA ----
 
+# set filename
+if(mf_restrict == TRUE){
+  prepca_filename <- paste(clade, "matchedsex", "patches.231030.prePCAcolspaces.rds", sep = ".")
+} else{
+  prepca_filename <- paste(clade, "allspecimens", "patches.231030.prePCAcolspaces.rds", sep = ".")
+}
+
 # reload the raw colour spaces (if necessary)
-non_PCA_colourspaces <- readRDS("./2_Patches/3_OutputData/1_RawColourspaces/Passeriformes.patches.231030.prePCAcolspaces.rds")
+non_PCA_colourspaces <- readRDS(
+  here::here(
+    "2_Patches", "3_OutputData", "1_RawColourSpaces", 
+    prepca_filename
+  )
+)
 
-
-cps.usml <- non_PCA_colourspaces$usml
-cps.usmlraw <- non_PCA_colourspaces$usmlraw
-cps.usmldbl <- non_PCA_colourspaces$usmldbl
-cps.usmldblr <- non_PCA_colourspaces$usmldblr
-cps.xyz <- non_PCA_colourspaces$xyz
-cps.xyzlum <- non_PCA_colourspaces$xyzlum
-cps.xyzlumr <- non_PCA_colourspaces$xyzlumr
-cps.lab <- non_PCA_colourspaces$lab
-cps.ab <- non_PCA_colourspaces$ab
-cps.L <- non_PCA_colourspaces$L
-cps.cie <- non_PCA_colourspaces$cie
-cps.srgb <- non_PCA_colourspaces$sRGB
-cps.hex <- non_PCA_colourspaces$hex
-cps.jndxyz <- non_PCA_colourspaces$jndxyz
-cps.jndxyzlum <- non_PCA_colourspaces$jndxyzlum
-cps.jndxyzlumr <- non_PCA_colourspaces$jndxyzlumr
 
 # perform PCA for each colour space to get colour pattern spaces (excluding hex space - can't PCA a non-numeric)
 spaces <- c("usml", "usmlraw", "usmldbl", "usmldblr", "xyz", "xyzlum", "xyzlumr", "lab", "ab", "L", "cie", "sRGB", "jndxyz", "jndxyzlum", "jndxyzlumr")
@@ -165,7 +140,22 @@ pca_spaces <- lapply(spaces, function(space, spaces_list) prcomp(spaces_list[[sp
 names(pca_spaces) <- spaces
 
 # Save list of PCA colour pattern spaces as RDS file
-saveRDS(pca_spaces, file = "./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Passeriformes.patches.231030.PCAcolspaces.rds")
+
+# set filename
+if(mf_restrict == TRUE){
+  pca_filename <- paste(clade, "matchedsex", "patches.231030.PCAcolspaces.rds", sep = ".")
+} else{
+  pca_filename <- paste(clade, "allspecimens", "patches.231030.PCAcolspaces.rds", sep = ".")
+}
+
+# save
+saveRDS(
+  non_PCA_colourspaces,
+  here::here(
+    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA", 
+    pca_filename
+  )
+)
 
 # The scaled luminance version looks identical to the non-scaled luminance version but actually is ever so slightly different 
 # - I've tracked through the whole process and the scaling is working correctly, it just makes essentially no difference to 
