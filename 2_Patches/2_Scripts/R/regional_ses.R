@@ -4,12 +4,15 @@ calc_iucn_ses <- function(pca_region, region_species, iucn_data, iucn_cat, metri
   
   # set dispRity metric
   if(metric == "centr-dist"){
-    metric_get <- "centroids"
+    metric_get <- get("centroids")
   } else if (metric == "nn-k"){
-    metric_get <- "mean.nn.dist"
+    metric_get <- get("mean.nn.dist")
   }else if (metric == "nn-count"){
-    metric_get <- "count.neighbours"
+    metric_get <- get("count.neighbours")
+  } else if(metric == "sum.variances"){
+    metric_get <- list(sum, variances)
   }
+  
   
   # set up vector to store results
   res_vec <- rep(NA, times = 6)
@@ -33,7 +36,7 @@ calc_iucn_ses <- function(pca_region, region_species, iucn_data, iucn_cat, metri
   pca_subset <- pca_region[trimmed_species, ]
   
   # calculate mean of metric of all species in ROI in IUCN cats of interest
-  roi_metric_avg <- avg(dispRity(pca_subset, metric = get(metric_get))$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+  roi_metric_avg <- avg(dispRity(pca_subset, metric = metric_get)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
   
   # add species richness and average metric to results vector
   res_vec["species_richness"] <- length(trimmed_species)
@@ -64,7 +67,7 @@ calc_iucn_ses <- function(pca_region, region_species, iucn_data, iucn_cat, metri
           trait_vec <- matrix(pca_region[coms, ], ncol = dim(pca_region)[2])
           
           # Calculate the disparity value for the current simulation (column j)
-          disparity_value <- avg(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+          disparity_value <- avg(dispRity(trait_vec, metric = metric_get)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
           
           return(disparity_value)
         }
@@ -83,7 +86,7 @@ calc_iucn_ses <- function(pca_region, region_species, iucn_data, iucn_cat, metri
           trait_vec <- matrix(pca_region[coms, ], ncol = dim(pca_region)[2])
           
           # Calculate the disparity value for the current simulation (column j)
-          disparity_value <- avg(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+          disparity_value <- avg(dispRity(trait_vec, metric = metric_get)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
           
           return(disparity_value)
         }
@@ -117,11 +120,13 @@ calc_region_ses <- function(region_sf, pca_data, pam, null_raster, iucn, metric,
   
   # set dispRity metric
   if(metric == "centr-dist"){
-    metric_get <- "centroids"
+    metric_get <- get("centroids")
   } else if (metric == "nn-k"){
-    metric_get <- "mean.nn.dist"
+    metric_get <- get("mean.nn.dist")
   }else if (metric == "nn-count"){
-    metric_get <- "count.neighbours"
+    metric_get <- get("count.neighbours")
+  } else if(metric == "sum.variances"){
+    metric_get <- list(sum, variances)
   }
   
   # set up results matrix
@@ -132,7 +137,7 @@ calc_region_ses <- function(region_sf, pca_data, pam, null_raster, iucn, metric,
   # first assign values to null_rast to keep track of grid cells
   null_rast_sub <- null_raster
   # get number of grid cells in full raster
-  ncells <- length(terra::values(null_rast))
+  ncells <- length(terra::values(null_raster))
   terra::values(null_rast_sub) <- 1:ncells
   # crop raster to ecoregion extent
   null_rast_sub <- terra::crop(null_rast_sub, region_sf)
@@ -141,6 +146,10 @@ calc_region_ses <- function(region_sf, pca_data, pam, null_raster, iucn, metric,
   
   # use values of subsetted raster to subset PAM to ROI
   pam_sub <- pam[terra::values(null_rast_sub), ]
+  
+  # subset pam to only species which are present in the PCA data (this is necessary
+  # if we're using all species, not just those with both male and female specimens)
+  pam_sub <- subset_pam(pam_sub, get_unique_spp(pca_data))
   
   # get species which are present in subsetted PAM
   if(length(terra::values(null_rast_sub)) < 2){
@@ -176,7 +185,7 @@ calc_region_ses <- function(region_sf, pca_data, pam, null_raster, iucn, metric,
   pca_region <- pca_data[species_pres, ]
   
   # calculate average of metric of all species in region
-  roi_metric_avg <- avg(dispRity(pca_region, metric = get(metric_get))$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+  roi_metric_avg <- avg(dispRity(pca_region, metric = metric_get)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
   
   # add species richness and average metric to results table
   results[1, "species_richness"] <- length(species_pres)

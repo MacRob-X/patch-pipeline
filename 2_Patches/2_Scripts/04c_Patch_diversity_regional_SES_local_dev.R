@@ -37,7 +37,7 @@ source(
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Neoaves"
+clade <- "Passeriformes"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
@@ -45,17 +45,17 @@ space <- "lab"
 # select whether to use matched sex data (""all" or "matchedsex")
 # "matchedsex" will use diversity metrics calculated on a subset of data containing only species
 # for which we have both a male and female specimen (and excluding specimens of unknown sex)
-sex_match <- "matchedsex"
+sex_match <- "allspecimens"
 # select sex of interest ("all", "male_female", "male_only", "female_only", "unknown_only")
 sex_interest <- "male_female"
-# select metric ("centr-dist", "nn-k", "nn-count")
-metric <- "centr-dist"
+# select metric ("centr-dist", "nn-k", "nn-count", "sum.variances)
+metric <- "sum.variances"
 # select type of averaging to use ("mean" or "median")
 avg_par <- "mean"
 # select whether to calculate local or global diversity loss (i.e., mean distance to local or global centroid)
 div_loss_type <- "local"
 # select number of null distributions to generate
-n_sims <- 1000
+n_sims <- 10
 # select whether to exclude grid cells with species richness below a certain threshold (e.g. 5)
 # set as 0 if no threshold wanted
 sr_threshold <- 5
@@ -72,7 +72,7 @@ pam_type <- "conservative"
 # clip PAM to land only? ("_clipped" or "")
 pam_seas <- "_clipped"
 # select PAM grid cell resolution
-pam_res <- "100km"
+pam_res <- "200km"
 # enter PAM files location
 pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLife_Shapefiles_GHT/PAMs"
 #pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLife_Shapefiles_v9/PAMs/100km/Behrmann_cea/"
@@ -100,7 +100,7 @@ avg <- function(vals, avg_type, na.rm = TRUE){
 # Load data ----
 
 # set PCA filename
-pca_filename <- paste(clade, "patches.231030.PCAcolspaces", "rds", sep = ".")
+pca_filename <- paste(clade, sex_match, "patches.231030.PCAcolspaces", "rds", sep = ".")
 # Load PCA (values only)
 pca_dat <- readRDS(
   here::here(
@@ -143,7 +143,7 @@ colnames(pam) <- gsub(" ", "_", colnames(pam))
 
 # add species and sex columns (from rownames)
 # only necessary if we're subsetting in some way
-if(sex_match != "all"){
+if(sex_match != "allspecimens"){
   pca_dat <- pca_spp_sex(pca_dat)
 }
 
@@ -337,6 +337,9 @@ names(results_dfs) <- NULL
 # identify rows to be removed (regions which contain no species or only a single species in our dataset)
 rows_to_keep <- which(!(results_dfs[[1]][, 1] == "nospec_region" | results_dfs[[1]][, 1] == "singlespec_region"))
 
+# load region data (either Dinerstein et al 2017 ecoregion data or biome data derived from same)
+region_shapes <- load_regions(regions)
+
 # bind results to sf data
 region_results <- cbind(region_shapes, do.call(cbind, results_dfs))
 
@@ -403,7 +406,15 @@ leg_increm <- (max(leg_range) - min(leg_range)) / 100
 leg_range <- c(min(leg_range) - leg_increm,
                max(leg_range) + leg_increm)
 # define colour scale
-leg_fill <- viridis::viridis(100, direction = -1)
+if(palette_choice == "viridis"){
+  leg_fill <- viridis::viridis(100, direction = -1)
+} else if(palette_choice == "custom"){
+  # custom option 1: truncated viridis (so it's a one-colour gradient)
+ # leg_fill <- viridis::plasma(125, direction = -1)[26:125]
+ # custom option 2: red-white gradient
+ leg_fill <- rgb(colorRamp(c("red", "white"), space = "Lab", interpolate = "linear")(seq(from = 0, to = 1, by = 0.01)), maxColorValue = 255)
+}
+
 # define legend title
 leg_title <- paste0("SES value (", metric, ")")
 
@@ -461,9 +472,14 @@ for(layer in layers){
   
   # plot polygon of values < 2 (if requested)
   if(outline == TRUE){
-    terra::polys(terra::as.polygons(thresh_rast[[layer]]), 
-                col = "#f28383", density = 10, angle = 45,
-                border = "#f28383", lwd = 1)
+    
+    if(!all(is.na(terra::values(thresh_rast[[layer]])))){
+      
+      terra::polys(terra::as.polygons(thresh_rast[[layer]]), 
+                col = "red", density = 10, angle = 45,
+                border = "red", lwd = 1)
+      }
+    
     }
   
 }
