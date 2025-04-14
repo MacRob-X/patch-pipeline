@@ -155,13 +155,13 @@ set_sex_list <- function(sex_interest = c("all", "male_female", "male", "female"
 }
 
 # extract named vectors of diversity metric for an individual sex
-extract_sex_vals <- function(div_data, sex, metric = NULL){
+extract_sex_vals <- function(div_data, sex, metric = NULL, assemblage_level = FALSE){
   
   # generate sex suffix
   sex_suffix <- paste0("-", sex)
   
-  # if working with diversity metric data
-  if(!is.null(metric)){
+  # if working with diversity metric data, rather than calculating metrics at an assemblage level
+  if(!is.null(metric) & assemblage_level == FALSE){
     
     # filter to individual sex
     metric_sex <- div_data[grepl(sex_suffix, rownames(div_data)), metric, drop = FALSE]
@@ -169,7 +169,7 @@ extract_sex_vals <- function(div_data, sex, metric = NULL){
     
     return(metric_sex)
     
-  } else if(is.null(metric)){ # If metric is null, assume we're working with PCA data (i.e., keep all columns)
+  } else if(assemblage_level == TRUE){ # If metric is null, assume we're working with PCA data (i.e., keep all columns)
     
     # filter to individual sex  
     pca_sex <- div_data[grepl(sex_suffix, rownames(div_data)), , drop = FALSE]
@@ -265,5 +265,71 @@ combine_raster_list <- function(raster_list){
   }
   
   return(multi_rast)
+  
+}
+
+# make wrapper function for averaging (allows selection of average type e.g. mean, median)
+avg <- function(vals, avg_type, na.rm = TRUE){
+  return(get(avg_type)(vals, na.rm = na.rm))
+}
+
+# Calculate assemblage-level disparity metric
+# calculate value of chosen metric for each occupied grid cell in PAM (i.e., each non-NA row)
+calc_metric_gridcell <- function(pam_row, pca_data, metric, avg_par, min_species = 0, ...){
+  
+  # set dispRity metric
+  if(metric == "centr-dist"){
+    metric_get <- get("centroids")
+  } else if (metric == "nn-k"){
+    metric_get <- get("mean.nn.dist")
+  }else if (metric == "nn-count"){
+    metric_get <- get("count.neighbours")
+  } else if(metric == "convhull.volume"){
+    metric_get <- get("convhull.volume")
+  } else if(metric == "displacements"){
+    metric_get <- get("displacements")
+  } else if(metric == "sum.variances"){
+    metric_get <- list(sum, variances)
+  } else if(metric == "sum.ranges"){
+    metric_get <- list(sum, ranges)
+  } 
+  
+  # get species present in grid cell
+  species_pres <- names(pam_row)[which(!is.na(pam_row))]
+  
+  # if no species are present, one species is present, or if there are fewer species present than 
+  # cutoff value, return NA
+  if(length(species_pres) <= 1 | length(species_pres) < min_species){
+    return(NA)
+  }
+  
+  # subset PCA data to these species only
+  pca_data <- pca_data[which(rownames(pca_data) %in% species_pres), ]
+  
+  # calculate value of metric for these species only
+  div_values <- dispRity(
+    pca_data,
+    metric = metric_get,
+    ...
+  )$disparity[[1]][[1]]
+  
+  # calculate average (using wrapper function)
+  avg_div_val <- avg(div_values, avg_par, na.rm = TRUE)
+  
+  # return average
+  return(avg_div_val)
+  
+}
+
+# create assemblage-level diversity raster - takes diversity values per grid cell as input
+make_assdiv_raster <- function(div_vals, null_rast){
+  
+  # create copy of null rast
+  div_raster <- null_rast
+  
+  # set raster values to species richness values
+  terra::values(div_raster) <- div_vals
+  
+  return(div_raster)
   
 }
