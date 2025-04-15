@@ -33,7 +33,7 @@ clade <- "Passeriformes"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
-space <- "lab"
+space <- "L"
 # select whether to use matched sex data (""all" or "matchedsex")
 # "matchedsex" will use diversity metrics calculated on a subset of data containing only species
 # for which we have both a male and female specimen (and excluding specimens of unknown sex)
@@ -62,7 +62,7 @@ pam_type <- "conservative"
 # clip PAM to land only? ("_clipped" or "")
 pam_seas <- "_clipped"
 # select PAM grid cell resolution
-pam_res <- "200km"
+pam_res <- "100km"
 # enter PAM files location
 pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLife_Shapefiles_GHT/PAMs"
 #pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLife_Shapefiles_v9/PAMs/100km/Behrmann_cea/"
@@ -137,7 +137,41 @@ sexed_metric_list <- lapply(sexes, extract_sex_vals, div_data = pca_dat, metric 
 names(sexed_metric_list) <- sexes
 
 # calculate value of chosen metric for each occupied grid cell in PAM (i.e., each non-NA row)
-div_values <- apply(pam, 1, calc_metric_gridcell, pca_data = sexed_metric_list$M, metric = metric, avg_par = avg_par, min_species = sr_threshold)
+# apply across all sexes
 
-# make a raster of assemblage-level diversity values
-div_raster <- make_assdiv_raster(div_values, null_rast)
+div_values <- lapply(
+  sexed_metric_list,
+  function(x) apply(pam, 1, calc_metric_gridcell, pca_data = x, metric = metric, avg_par = avg_par, min_species = sr_threshold)
+)
+
+# div_values <- apply(pam, 1, calc_metric_gridcell, pca_data = sexed_metric_list$M, metric = metric, avg_par = avg_par, min_species = sr_threshold)
+
+# make a list of individual rasters of assemblage-level diversity values
+div_raster <- lapply(div_values, make_assdiv_raster, null_rast = null_rast)
+
+# combine into a single multilayer raster
+div_raster <- combine_raster_list(div_raster)
+
+plot(div_raster)
+
+# create df for ggplot of latitudinal gradient
+div_df <- as.data.frame(div_raster, xy = TRUE)
+div_df <- tidyr::pivot_longer(div_df, cols = c("M", "F"), names_to = "Layer", values_to = "Centroid_distance")
+colnames(div_df) <- c("longitude", "latitude", "sex", "centroid_distance")
+
+# plot latitudinal gradient - all values
+div_df %>% 
+  ggplot(aes(x = latitude, y = centroid_distance, colour = sex)) + 
+  geom_point() + 
+  facet_wrap(~ sex) + 
+  theme_minimal()
+
+# plot latitudinal gradient - means
+div_df %>% 
+  group_by(latitude, sex) %>% 
+  summarise(mean_value = mean(centroid_distance, na.rm = TRUE), .groups = "drop") %>% 
+  ggplot(aes(y = mean_value, x = latitude, colour = sex)) + 
+ # geom_line() + 
+  geom_point() + 
+  facet_wrap(~ sex, scales = "free_x") + 
+  theme_minimal()
