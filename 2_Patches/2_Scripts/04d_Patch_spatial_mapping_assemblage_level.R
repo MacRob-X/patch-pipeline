@@ -33,7 +33,9 @@ clade <- "Passeriformes"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
-space <- "L"
+space <- "lab"
+# Select number of PC axes to retain ("all" or a number)
+axes <- "6"
 # select whether to use matched sex data (""all" or "matchedsex")
 # "matchedsex" will use diversity metrics calculated on a subset of data containing only species
 # for which we have both a male and female specimen (and excluding specimens of unknown sex)
@@ -104,6 +106,11 @@ pam_raw <- readRDS(
 
 # Data preparation ----
 
+# restrict PCA to requested number of axes
+if(axes != "all"){
+  pca_dat <- pca_dat[, 1:axes]
+}
+
 # extract null raster from PAM
 null_rast <- extract_null_rast(pam_raw)
 
@@ -145,12 +152,104 @@ div_values <- lapply(
 )
 
 # div_values <- apply(pam, 1, calc_metric_gridcell, pca_data = sexed_metric_list$M, metric = metric, avg_par = avg_par, min_species = sr_threshold)
+# 
+# for(i in 990:1000){(calc_metric_gridcell(pam[i,], pca_data =  sexed_metric_list$M, metric = metric, avg_par = avg_par, min_species = sr_threshold))}
 
 # make a list of individual rasters of assemblage-level diversity values
 div_raster <- lapply(div_values, make_assdiv_raster, null_rast = null_rast)
 
+# get species richness by grid cell
+species_richness <- calc_species_richness(pam)
+
+# create a mask for cells with species richness >= threshold
+sr_mask <- make_sr_mask(species_richness, sr_threshold)
+
+# save mask for later use
+sr_mask_filename <- paste("species_richness_mask_threshold", sr_threshold, sub(".rds", "", pam_filename, fixed = TRUE), clade, sex_match, sep = "_")
+saveRDS(
+  sr_mask, file = here::here(
+    "2_Patches", "3_OutputData", "6_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space, "sr_masks",
+    paste0(sr_mask_filename, ".rds")
+  )
+)
+
+# create raster of species richness (for plotting later)
+sr_raster <- make_sr_raster(species_richness, null_rast)
+
+# first add SR raster to the list of diversity rasters
+div_raster[["species_richness"]] <- sr_raster
+
 # combine into a single multilayer raster
 div_raster <- combine_raster_list(div_raster)
+
+# save raster
+div_raster_filename <- paste("assemblvl", clade, "patches", space, sex_match, avg_par, metric, "sr_thresh", sr_threshold, avg_par, pam_res, "Behrman", pam_type, pam_seas, "raster.tif", sep = ".")
+terra::writeRaster(
+  div_raster,
+  filename = here::here(
+    "2_Patches", "3_OutputData", "6_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space,
+    div_raster_filename
+  ),
+)
+
+# Plotting ----
+
+# clear environment except variables used to generate raster filename
+rm(list=setdiff(ls(), c("clade", "space", "sex_match", "metric", "avg_par", "pam_res", "pam_type", "pam_seas", "sr_threshold", "sift_rast_data", "col_scale_type", "nquants", "palette_choice", "plot_sr",  "apply_sr_threshold", "filter_div_raster", "get_world", "make_colour_breaks", "match_extents", "plot_div_raster")))
+
+# load diversity raster
+div_raster_filename <- paste("assemblvl", clade, "patches", space, sex_match, avg_par, metric, "sr_thresh", sr_threshold, avg_par, pam_res, "Behrman", pam_type, pam_seas, "raster.tif", sep = ".")
+div_raster <- terra::rast(
+  here::here(
+    "2_Patches", "3_OutputData", "6_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space,
+    div_raster_filename
+  )
+)
+
+# load species richness mask
+sr_mask_filename <- paste0("species_richness_mask_threshold_", sr_threshold, "_PAM_birds_Behrman", pam_res, "_Pres12_Orig12_Seas12_", pam_type, pam_seas, "_", clade, "_", sex_match, ".rds")
+sr_mask <- readRDS(
+  here::here(
+    "2_Patches", "3_OutputData", "6_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space, "sr_masks",
+    sr_mask_filename
+  )
+)
+
+# apply species richness threshold to diversity raster (diversity metric layers only)
+div_raster_masked <- apply_sr_threshold(div_raster, sr_mask, exclude_sr_lyr = TRUE)
+
+# sift data to only the upper quartile of each layer
+if(sift_rast_data == TRUE){
+  div_raster_masked <- filter_div_raster(div_raster_masked)
+}
+
+# get world map and transform to same CRS as diversity raster (for plotting)
+world <- get_world(new_crs = terra::crs(div_raster), spatvec = TRUE)
+
+# match extent of diversity raster to world map extent (need to do this to plot in base R)
+div_raster_masked <- match_extents(div_rast = div_raster_masked, world_spatvec = world)
+
+# set up colour scale breaks as quantiles
+colour_breaks <- make_colour_breaks(div_raster_masked, nquants, plot_sr = plot_sr)
+
+# plot
+
+# set png filename, if saving
+png_filename <- paste(clade, "patches", sex_match, avg_par, metric, "sr_thresh", sr_threshold, col_scale_type, palette_choice, "colscale", "Behrman", pam_seas, "png", sep = ".")
+
+plot_div_raster(div_raster_masked, 
+                world_spatvec = world, 
+                div_metric = metric,
+                scale_type = col_scale_type, pal_choice = palette_choice,
+                plot_sr = TRUE,
+                div_breaks = colour_breaks$div_breaks, sr_breaks = colour_breaks$sr_breaks,
+                save_png = TRUE,
+                png_filename = png_filename,
+                assemb_level = TRUE)
+
+
+
+# dev
 
 plot(div_raster)
 
@@ -169,8 +268,8 @@ div_df %>%
 # plot latitudinal gradient - means
 div_df %>% 
   group_by(latitude, sex) %>% 
-  summarise(mean_value = mean(centroid_distance, na.rm = TRUE), .groups = "drop") %>% 
-  ggplot(aes(y = mean_value, x = latitude, colour = sex)) + 
+  summarise(median_value = median(centroid_distance, na.rm = TRUE), .groups = "drop") %>% 
+  ggplot(aes(y = median_value, x = latitude, colour = sex)) + 
  # geom_line() + 
   geom_point() + 
   facet_wrap(~ sex, scales = "free_x") + 

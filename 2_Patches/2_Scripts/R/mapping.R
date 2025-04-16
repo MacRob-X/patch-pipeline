@@ -303,6 +303,14 @@ calc_metric_gridcell <- function(pam_row, pca_data, metric, avg_par, min_species
     return(NA)
   }
   
+  # if calculating convex hull hypervolume, need at least n+1 species present, where n =
+  # number of dimensions
+  if(metric == "convhull.volume"){
+    if(length(species_pres) <= ncol(pca_data)){
+      return(NA)
+    }
+  }
+  
   # subset PCA data to these species only
   pca_data <- pca_data[which(rownames(pca_data) %in% species_pres), ]
   
@@ -313,11 +321,25 @@ calc_metric_gridcell <- function(pam_row, pca_data, metric, avg_par, min_species
     ...
   )$disparity[[1]][[1]]
   
-  # calculate average (using wrapper function)
-  avg_div_val <- avg(div_values, avg_par, na.rm = TRUE)
+  # calculate average if output is dimension-level 2
+  metric_type <- dispRity::make.metric(metric_get, silent = TRUE)[["type"]]
+  if(metric_type == "level2"){
+    
+    # calculate average (using wrapper function)
+    avg_div_val <- avg(div_values, avg_par, na.rm = TRUE)
+    
+    # return average
+    return(avg_div_val)
+    
+  } else {
+    
+    # else return single level1 value
+    return(div_values)
+    
+  }
+
   
-  # return average
-  return(avg_div_val)
+
   
 }
 
@@ -333,3 +355,319 @@ make_assdiv_raster <- function(div_vals, null_rast){
   return(div_raster)
   
 }
+
+
+# calculate species richness for each grid cell
+calc_species_richness <- function(pam_matrix){
+  
+  return(rowSums(pam_matrix, na.rm = TRUE))
+  
+}
+
+
+# create species richness mask that can be applied to PAM
+make_sr_mask <- function(sr_vector, sr_threshold){
+  
+  # create mask
+  sr_mask <- ifelse(sr_vector >= sr_threshold, TRUE, NA)
+  
+  return(sr_mask)
+  
+}
+
+# create species richness raster
+make_sr_raster <- function(sr_vals, null_rast){
+  
+  # set values == 0 to NA (so they don't get plotted)
+  sr_vals[sr_vals == 0] <- NA
+  
+  # create copy of null rast
+  sr_raster <- null_rast
+  
+  # set raster values to species richness values
+  terra::values(sr_raster) <- sr_vals
+  
+  return(sr_raster)
+  
+  
+}
+
+
+apply_sr_threshold <- function(diversity_raster, sr_mask, exclude_sr_lyr = TRUE){
+  
+  # exclude species richness values from masking, if requested
+  if(exclude_sr_lyr == TRUE){
+    
+    # set aside species richness values
+    sr_values <- terra::values(diversity_raster[["species_richness"]])
+    
+    # apply sr threshold mask to whole raster
+    div_rast_masked <- diversity_raster
+    terra::values(div_rast_masked) <- terra::values(diversity_raster) * sr_mask
+    
+    # reset sr values to their original
+    terra::values(div_rast_masked[["species_richness"]]) <- sr_values
+    
+  } else {
+    
+    # apply sr threshold mask to whole raster
+    div_rast_masked <- diversity_raster
+    terra::values(div_rast_masked) <- terra::values(diversity_raster) * sr_mask
+    
+  }
+  
+  return(div_rast_masked)
+  
+  
+}
+
+# get world map for plotting
+get_world <- function(new_crs, spatvec){
+  
+  # get world map from rnaturalearth
+  world <- rnaturalearth::ne_countries(returnclass = "sf")
+  
+  # transform to correct crs
+  world <- sf::st_transform(world, crs = new_crs)
+  
+  # transform to spatvector, if required (need to do this if using base R plot)
+  if(spatvec == TRUE){
+    
+    # transform to spatvector
+    world <- terra::vect(world)
+    
+  }
+  
+  return(world)
+}
+
+make_colour_breaks <- function(raster, nquants, plot_sr = FALSE){
+  
+  # calculate species richness quantiles, if required
+  if(plot_sr == TRUE){
+    sr_quants <- quantile(
+      terra::values(raster[["species_richness"]]),
+      na.rm = TRUE,
+      probs = seq(0, 1, by = 1/nquants)
+    )
+    names(sr_quants) <- round(sr_quants, digits = 1)
+  }
+  
+  # remove the species_richness layer
+  layer_names <- terra::names(raster)
+  sr_index <- which(layer_names == "species_richness")
+  new_layer_names <- layer_names[-sr_index]
+  raster <- raster[[new_layer_names]]
+  
+  # get quantiles from raster diversity values
+  div_quants <- quantile(
+    terra::values(raster), 
+    na.rm = TRUE, 
+    probs = seq(0, 1, by = 1/nquants)
+  )
+  
+  # make names of quants a rounded version of the quantiles (for plotting)
+  names(div_quants) <- round(div_quants, digits = 1)
+  
+  if(plot_sr == TRUE){
+    quants <- list(div_breaks = div_quants, sr_breaks = sr_quants)
+  } else {
+    quants <- div_quants
+  }
+  
+  return(quants)
+  
+}
+
+# match extents of world and diversity rasters (necessary to plot in base R)
+match_extents <- function(div_rast, world_spatvec){
+  
+  # match extent of diversity raster to that of world spatvector
+  terra::ext(div_rast) <- terra::ext(world_spatvec)
+  
+  return(div_rast)
+  
+}
+
+# plot individual layers of diversity raster on the same plot
+plot_div_raster <- function(div_rast, 
+                            world_spatvec,
+                            div_metric,
+                            scale_type = c("binned", "continuous"), 
+                            div_breaks = NULL, sr_breaks = NULL, 
+                            pal_choice = c("viridis", "turbo", "custom"), 
+                            plot_sr = FALSE,
+                            save_png = FALSE,
+                            png_filename = NULL,
+                            assemb_level = FALSE){
+  
+  # get names of raster layers
+  layer_names <- terra::names(div_rast)
+  
+  # set up colour scale and palette
+  if(scale_type == "binned"){
+    
+    nquants <- length(div_breaks) - 1
+    
+    # set colour palette for diversity metric
+    if(pal_choice == "viridis"){
+      divpal <- viridisLite::viridis(nquants)
+    } else if(pal_choice == "turbo"){
+      divpal <- viridisLite::turbo(nquants)
+    } else if(pal_choice == "custom"){
+      # create own colour palette (based on Cooney et al (2022) Fig. 2)
+      cols <- c("#3e9eb5ff", "#eacc2cff", "#f82202ff")
+      divpal <- colorRampPalette(cols)(nquants)
+    }
+    
+    # reverse colour palette if using nn-count (as low numbers indicate more unusual colours for this metric)
+    if(metric == "nn-count"){
+      divpal <- rev(divpal)
+    }
+    
+    # set colour palette for species richness, if plotting
+    if(plot_sr == TRUE){
+      
+      nquants_sr <- length(sr_breaks) - 1
+      
+      if(palette_choice == "viridis"){
+        srpal <- viridisLite::viridis(nquants_sr)
+      } else if(palette_choice == "turbo"){
+        srpal <- viridisLite::turbo(nquants_sr)
+      } else if(palette_choice == "custom"){
+        # create own colour palette (based on Cooney et al (2022) Fig. 2)
+        cols <- c("#3e9eb5ff", "#eacc2cff", "#f82202ff")
+        srpal <- colorRampPalette(cols)(nquants_sr)
+      }
+    }
+    
+    
+  }
+  
+  # Set up basic legend title
+  if(metric == "centr-dist"){
+    lgd_metric <- paste0(avg_par, " distance\nto centroid ")
+  } else if(metric == "nn-k"){
+    lgd_metric <- paste0(avg_par, " distance\nto nearest neighbours ")
+  } else if(metric == "nn-count"){
+    lgd_metric <- paste0(avg_par, " number\nof nearest neighbours\nin radius r ")
+  } else if(metric == "convhull.volume"){
+    lgd_metric <- paste0("Convex hull\nhypervolume ")
+  }
+  
+  
+  # set up png saving parameters
+  if(plot_sr == FALSE){
+    png_width <- 420
+    png_height <- 300
+  } else if(plot_sr == TRUE){
+    png_width <- 320
+    png_height <- 400
+  }
+  
+  # initialise png saving
+  if(save_png == TRUE){
+    if(assemb_level == FALSE){
+      png(
+        here::here(
+          "2_Patches", "4_OutputPlots", "3_Spatial_mapping", pam_res, space, pam_type,
+          png_filename
+        ), 
+        width = png_width, height = png_height, units = "mm", pointsize = 24, res = 100,
+      )
+    } else if(assemb_level == TRUE){
+      png(
+        here::here(
+          "2_Patches", "4_OutputPlots", "3_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space, pam_type,
+          png_filename
+        ), 
+        width = png_width, height = png_height, units = "mm", pointsize = 24, res = 100,
+      )
+      }
+  }
+  
+  # set up plotting grid and remove species richness layer of raster, if not plotting
+  if(plot_sr == FALSE){
+    
+    sr_index <- which(layer_names == "species_richness")
+    new_layer_names <- layer_names[-sr_index]
+    div_rast <- div_rast[[new_layer_names]]
+    
+    par(mfrow = c(2, 1))
+    
+  } else if(plot_sr == TRUE){
+    
+    par(mfrow = c(3, 1))
+    
+  }
+  
+  # set font size
+  cexval <- 0.7
+  
+  # get updated names of layers, to apply plotting across
+  layers <- terra::names(div_rast)
+  
+  # just use a for loop, for ease (could also do as an apply function)
+  for(layer in layers){
+    
+    # set up colour breaks, palette and sex-specific legend title
+    if(layer == "M"){
+      breaks <- div_breaks
+      colpal <- divpal
+      lgd_title <- paste0(lgd_metric, "(males)")
+    } else if(layer == "F"){
+      breaks <- div_breaks
+      colpal <- divpal
+      lgd_title <- paste0(lgd_metric, "(females)")
+    } else if(layer == "U"){
+      breaks <- div_breaks
+      colpal <- divpal
+      lgd_title <- paste0(lgd_metric, "(unknown sex)")
+    } else if(layer == "species_richness"){
+      breaks <- sr_breaks
+      colpal <- srpal
+      lgd_title <- "species richness"
+    }
+    
+    
+    # first plot male diversity raster to get legend only
+    terra::plot(
+      div_rast, layer, 
+      breaks = breaks, 
+      col = colpal, 
+      #  colNA = "grey",
+      legend = TRUE,
+      frame = FALSE,
+      axes = FALSE, 
+      plg = list(title = lgd_title, x = "left", cex = cexval),
+      mar = c(1, 2, 1, 2)
+    )
+    # overlay grey world map so that NA parts of world are grey
+    terra::plot(
+      world_spatvec, 
+      col="grey80", 
+      border = NA, 
+      add = TRUE,
+      axes = "n"
+    )
+    # overlay male diversity raster again, but without legend
+    terra::plot(
+      div_rast, layer, 
+      breaks = breaks, 
+      col = colpal, 
+      # colNA = "grey",
+      add = TRUE,
+      legend = FALSE,
+      mar = c(1, 2, 1, 2)
+    )
+    
+  }
+  
+  # end png saving, if initialised
+  if(save_png == TRUE){
+    dev.off()
+  }
+  
+  
+}
+
