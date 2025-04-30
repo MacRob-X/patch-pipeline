@@ -16,16 +16,33 @@ library(treeio)
 library(treeplyr)
 library(ggplot2)
 
+## EDITABLE CODE ##
+# Select subset of species ("Neoaves" or "Passeriformes")
+clade <- "Passeriformes"
+# select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
+# N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
+# (from 240603 to 240806)
+space <- "lab"
+# Select number of PC axes to retain ("all" or a number)
+axes <- "8"
+# select whether to use matched sex data (""all" or "matchedsex")
+# "matchedsex" will use diversity metrics calculated on a subset of data containing only species
+# for which we have both a male and female specimen (and excluding specimens of unknown sex)
+sex_match <- "matchedsex"
+# select sex of interest ("all", "male_female", "male_only", "female_only", "unknown_only")
+sex_interest <- "male_female"
+
 
 # Load data ----
 
 # load patch data (PCA of whichever colourspace - generated in 02_Patch_Analyse_features.R)
+pca_filename <- paste(clade, sex_match, "patches.231030.PCAcolspaces", "rds", sep = ".")
 pca_all <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
-    "Neoaves.patches.231030.PCAcolspaces.jndxyzlum.240603.rds"
+    pca_filename
   )
-)
+)[[space]]
 
 # load first 100 trees of Hackett backbone full trees
 phy <- ape::read.tree(
@@ -34,7 +51,7 @@ phy <- ape::read.tree(
   )
 )
 
-# load taxonomy and rename columns
+# load taxonomy, rename columns, and convert taxon subgroup to sentence case
 taxo <- read.csv(
   here::here(
     "4_SharedInputData", "BLIOCPhyloMasterTax_2019_10_28.csv"
@@ -49,6 +66,9 @@ taxo <- read.csv(
   ) %>% 
   select(
     TipLabel, genus, family, order, taxon_subgroup
+  ) %>% 
+  mutate(
+    taxon_subgroup = snakecase::to_sentence_case(taxon_subgroup)
   )
 
 
@@ -350,109 +370,220 @@ p2
 
 # ------------------------------------------------------------------------------------------------------#
 # Calculate within-group diversity ----
-# mean distance to group centroid and mean pairwise distance
 
+# Choose disparity metric to calculate ("centr-dist", "nn-k", "nn-all", "nn-count", "sum.variances", "sum.ranges", "convhull.volume")
+metric <- "convhull.volume"
+# choose number of PC axes to work with ("all" or a number)
+axes <- 8
 # Specify taxonomic level to calculate at ("genus", "family", "order", "taxon_subgroup")
-tax_level <- "family"
+tax_level <- "taxon_subgroup"
 # Select sex to focus on ("M", "F", "All")
-sex_choice <- "M"
+sex_choice <- "F"
+# select type of averaging to use ("mean" or "median")
+avg_par <- "median"
 ## Drop depauperate clades? Specify min. number of species a clade must contain for it to be included
 ## Minimum is 2, as can't calculate centroid distances or pairwise distances for groups with
 ## only one species
-drop_depaup <- 2
+drop_depaup <- 9
 ## Plot on log scale?
-log_choice <- TRUE
+log_choice <- FALSE
 
 
+# FUNCTIONS
 
-# Convert PCA data to dataframe and append taxonomy
-pca_dat <- pca_all %>% 
-  magrittr::extract2("x") %>% 
-  as.data.frame() %>% 
-  mutate(
-    species = sapply(strsplit(rownames(.), split = "-"), "[", 1),
-    sex = sapply(strsplit(rownames(.), split = "-"), "[", 2)
-  ) %>% 
-  left_join(taxo, by = join_by("species" == "TipLabel"))
-
-# Filter by sex
-if(sex_choice != "All") {
-  pca_dat <- pca_dat %>% 
-    filter(
-      sex == sex_choice
-    )
-}
-
-# get clades with fewer species than specified minimum
-clades_to_keep <- pca_dat %>% 
-  count(get(tax_level)) %>% 
-  filter(
-    n >= drop_depaup
-  ) %>% 
-  magrittr::extract2(1)
-
-# remove these clades from data
-pca_dat <- pca_dat[pca_dat[, tax_level] %in% clades_to_keep, ]
-
-
-# Get list of unique taxa
-taxa <- pca_dat[, tax_level] %>% 
-  unique()
-
-
-# Create empty summary dataframe to populate with diversity metrics (for basic plots)
-summary_within_group_diversity <- data.frame(
-  taxa = taxa, 
-  mean_group_centr_dist = NA, 
-  mean_pairwise_dist = NA)
-colnames(summary_within_group_diversity) <- c(tax_level, "mean_group_centr_dist", "mean_pairwise_dist")
-
-# Create empty full species-level dataframe to populate with diversity metrics (for phylogenetic tree plots)
-within_group_diversity <- data.frame(
-  pca_dat[, c("species", "sex", tax_level)],
-  group_centr_dist = NA,
-  mean_group_centr_dist = NA,
-  mean_pairwise_dist = NA
+source(
+  here::here(
+    "2_Patches", "2_Scripts", "R", "mapping.R"
+  )
 )
 
-# Loop over vector of unique taxa
-for (taxon in taxa) {
+# convert PCA data to dataframe and append taxonomy
+join_taxo <- function(pca_data, taxonomy, spec_taxo = "TipLabel"){
   
-  # Get species data in taxon of interest in matrix form
-  dat <- pca_dat[pca_dat[, tax_level] == taxon, ]
-  rownames(dat) <- paste(dat$species, dat$sex, sep = "-")
-  mat <- as.matrix(dat[, 1:40])
-  
-  # Calculate distance of each species to within-group centroid and append to main dataframe
-  within_group_diversity$group_centr_dist[within_group_diversity[, tax_level] == taxon] <- dispRity::dispRity(
-    mat, metric = dispRity::centroids
-  )$disparity[[1]][[1]]
-  
-  # Calculate mean distance to within-group centroid and add to main dataframe
-  within_group_diversity$mean_group_centr_dist[within_group_diversity[, tax_level] == taxon] <- mean(
-    within_group_diversity$group_centr_dist[within_group_diversity[, tax_level] == taxon]
-    )
-  
-  # Calculate mean distance to within-group centroid and add to summary dataframe
-  summary_within_group_diversity$mean_group_centr_dist[summary_within_group_diversity[, tax_level] == taxon] <- mean(
-    within_group_diversity$group_centr_dist[within_group_diversity[, tax_level] == taxon]
-    )
-  
-  
-  
-  # Calculate mean within-group pairwise distance and append to main dataframe
-  within_group_diversity$mean_pairwise_dist[within_group_diversity[, tax_level] == taxon] <- mean(
-      dispRity::dispRity(
-      mat, metric = dispRity::pairwise.dist
-    )$disparity[[1]][[1]]
-  )
-  
-  # Add to summary dataframe
-  summary_within_group_diversity$mean_pairwise_dist[summary_within_group_diversity[, tax_level] == taxon] <-   within_group_diversity$mean_pairwise_dist[within_group_diversity[, tax_level] == taxon][1]
-  
+  pca_data %>% 
+    as.data.frame() %>% 
+    mutate(
+      species = sapply(strsplit(rownames(.), split = "-"), "[", 1),
+      sex = sapply(strsplit(rownames(.), split = "-"), "[", 2)
+    ) %>% 
+    left_join(taxonomy, by = setNames(spec_taxo, "species"))
   
 }
 
+# calculate within-group diversity
+calc_group_div <- function(sexed_pca_data, tax_level, metric, n_dim, drop_depaup, summary = FALSE, avg_par){
+  
+  # set dispRity metric
+  metric_get <- set_metric(metric)
+  
+  # get clades with fewer species than specified minimum
+  clades_to_keep <- sexed_pca_data %>% 
+    count(get(tax_level)) %>% 
+    filter(
+      n >= drop_depaup
+    ) %>% 
+    magrittr::extract2(1)
+  
+  # remove these clades from data
+  sexed_pca_data <- sexed_pca_data[sexed_pca_data[, tax_level] %in% clades_to_keep, ]
+  
+  
+  # Get list of unique taxa
+  taxa <- sexed_pca_data[, tax_level] %>% 
+    unique()
+  
+  # Create empty full species-level dataframe to populate with diversity metrics (for phylogenetic tree plots)
+  within_group_diversity <- data.frame(
+    sexed_pca_data[, c("species", "sex", tax_level)],
+    group_metric = NA,
+    avg_group_metric = NA
+  )
+  
+  if(summary == FALSE){
+    
+    # Loop over vector of unique taxa
+    for (taxon in taxa) {
+      
+      # Get species data in taxon of interest in matrix form
+      dat <- sexed_pca_data[sexed_pca_data[, tax_level] == taxon, ]
+      rownames(dat) <- paste(dat$species, dat$sex, sep = "-")
+      mat <- as.matrix(dat[, 1:n_dim])
+      
+      # Calculate distance of each species to within-group centroid and append to main dataframe
+      within_group_diversity$group_metric[within_group_diversity[, tax_level] == taxon] <- dispRity::dispRity(
+        mat, metric = metric_get
+      )$disparity[[1]][[1]]
+      
+      # Calculate mean within-group metric and add to main dataframe
+      within_group_diversity$avg_group_metric[within_group_diversity[, tax_level] == taxon] <- avg(
+        within_group_diversity$group_metric[within_group_diversity[, tax_level] == taxon], avg_type = avg_par
+      )
+      
+    }
+    
+    return(within_group_diversity)
+    
+  } else if(summary == TRUE){
+    
+    # Create empty summary dataframe to populate with diversity metrics (for basic plots)
+    summary_within_group_diversity <- data.frame(
+      taxa = taxa, 
+      avg_group_metric = NA
+      )
+    colnames(summary_within_group_diversity) <- c(tax_level, "avg_group_metric")
+    
+    # Loop over vector of unique taxa
+    for (taxon in taxa) {
+      
+      # Get species data in taxon of interest in matrix form
+      dat <- sexed_pca_data[sexed_pca_data[, tax_level] == taxon, ]
+      rownames(dat) <- paste(dat$species, dat$sex, sep = "-")
+      mat <- as.matrix(dat[, 1:n_dim])
+      
+      # Calculate distance of each species to within-group centroid and append to main dataframe
+      within_group_diversity$group_metric[within_group_diversity[, tax_level] == taxon] <- dispRity::dispRity(
+        mat, metric = metric_get
+      )$disparity[[1]][[1]]
+      
+      # Calculate mean distance to within-group centroid and add to main dataframe
+      within_group_diversity$avg_group_metric[within_group_diversity[, tax_level] == taxon] <- avg(
+        within_group_diversity$group_metric[within_group_diversity[, tax_level] == taxon], avg_type = avg_par
+      )
+      
+      # Calculate mean distance to within-group centroid and add to summary dataframe
+      summary_within_group_diversity$avg_group_metric[summary_within_group_diversity[, tax_level] == taxon] <- avg(
+        within_group_diversity$group_metric[within_group_diversity[, tax_level] == taxon], avg_type = avg_par
+      )
+      
+      
+    }
+    
+    return(summary_within_group_diversity)
+  }
+  
+}
+
+# Data preparation and analysis
+
+# restrict PCA to requested number of axes
+if(axes != "all"){
+  pca_dat <- pca_all[["x"]][, 1:axes]
+  n_dim <- axes
+} else {
+  pca_dat <- pca_all[["x"]]
+  n_dim <- ncol(pca_dat)
+}
+
+# convert PCA data to dataframe and append taxonomy
+pca_dat <- join_taxo(pca_dat, taxo, spec_taxo = "TipLabel")
+
+# get list of sexes (function from mapping code)
+# we will use these to iterate over
+sexes <- set_sex_list(sex_interest)
+
+# calculate within-group diversity for each sex separately
+within_group_diversity <- lapply(
+  sexes, 
+  function(sex, pca_data, taxo_level, n_dim, drop_depaup, avg_par, metric){
+    
+    sexed_data <- pca_data[pca_data[, "sex"] == sex, ]
+    
+    return(calc_group_div(sexed_data, taxo_level, n_dim, drop_depaup, avg_par = avg_par, metric = metric))
+    
+  }, pca_data = pca_dat, taxo_level = tax_level, n_dim = n_dim, drop_depaup = drop_depaup, avg_par = avg_par, metric = metric
+)
+
+# rbind list elements
+within_group_diversity <- data.table::rbindlist(within_group_diversity)
+
+
+# Boxplots by sex and group
+
+# set aspect ratio
+if(clade == "Passeriformes"){
+  ar <- 0.5
+} else if(clade == "Neoaves"){
+  ar <- 0.8
+}
+
+# Set x-label
+if(metric == "centr-dist"){
+  x_lab <- "Within-group Centroid Distance"
+} else if(metric == "nn-all"){
+  x_lab <- "Within-group Pairwise Distance"
+} else if(metric == "sum.variances"){
+  x_lab <- "Within-group Sum of Variances"
+} else if(metric == "displacements"){
+  x_lab <- "Relative displacement of group centroid from global centroid"
+} else if(metric == "convhull.volume"){
+  x_lab <- "Convex hull volume"
+} else {
+  x_lab <- "Within-group diversity"
+}
+
+p <- within_group_diversity %>% 
+  mutate(
+    taxon_subgroup = factor(taxon_subgroup, levels = sort(unique(taxon_subgroup), decreasing = TRUE))
+  ) %>% 
+  ggplot(aes(y = taxon_subgroup, x = log(group_metric), fill = log(avg_group_metric))) + 
+  geom_boxplot(notch = FALSE, outliers = FALSE,) + 
+  facet_wrap(~ sex, ncol = length(sexes)) +
+  scale_fill_viridis_c(name = "Median\nDistance") +
+  theme_minimal() +
+  labs(x = x_lab, y = "Taxon Subgroup")
+
+# save as png
+
+boxplot_filename <- paste0(clade, "_patch_", space, "_", metric, "_", "boxplot.png")
+png(
+  here::here(
+    "2_Patches", "4_OutputPlots", "2_Diversity_measures", "2_Diversity_phylogeny",
+    "within_group_diversity", paste(tax_level, "level", sep = "_"), "boxplots",
+    boxplot_filename
+  ), width = 1200, height = 1200*ar, res = 110
+)
+print(p)
+dev.off()
 
 ## Plotting on phylogeny
 
@@ -556,10 +687,10 @@ if(log_choice == TRUE) {
 svg(
   here::here(
     "2_Patches", "4_OutputPlots", "2_Diversity_measures", "2_Diversity_phylogeny",
-    "within_group_diversity", 
-    paste0("patch_jndxyzlum_", log_filename, "mean_group_centr_dist", "_", sex_choice, "_", "phylogeny.svg")
+    "within_group_diversity", paste(tax_level, "level", sep = "_"), "phylogenies",
+    paste0(clade, "_patch_", space, "_", log_filename, "mean_group_centr_dist", "_", sex_choice, "_", "phylogeny.svg")
   ), 
-  width = 6, height = 6
+  width = 7, height = 7
 )
 
 p
@@ -594,12 +725,65 @@ if(log_choice == TRUE) {
 svg(
   here::here(
     "2_Patches", "4_OutputPlots", "2_Diversity_measures", "2_Diversity_phylogeny",
-    "within_group_diversity", 
-    paste0("patch_jndxyzlum_", log_filename, "mean_pairwise_dist", "_", sex_choice, "_", "phylogeny.svg")
+    "within_group_diversity", paste(tax_level, "level", sep = "_"), "phylogenies",
+    paste0(clade, "_patch_", space, "_", log_filename, "mean_pairwise_dist", "_", sex_choice, "_", "phylogeny.svg")
   ), 
-  width = 6, height = 6
+  width = 7, height = 7
 )
 
 p
 
 dev.off()
+
+
+# Plot summary statistics for each group on boxplot
+
+
+# Boxplot of mean subgroup centroid distances 
+# create colour mapping
+
+# Calculate median values for each subgroup
+medians_centroid <- tapply(within_group_diversity$group_centr_dist, within_group_diversity$taxon_subgroup, median)
+
+# Assign colors based on median values using viridis palette
+colours <- viridisLite:::viridis(length(medians_centroid))
+
+# Match colors to subgroups based on their median values
+cols <- colours[match(medians_centroid, sort(medians_centroid))]
+
+# Set wider margins - bottom, left, top, right
+par(mar = c(5, 13, 1, 1), 
+    mgp = c(12, 1, 0))
+
+# plot boxplot of mean distance to centroid for each taxon subgroup
+boxplot(group_centr_dist ~ taxon_subgroup, data = within_group_diversity,
+        horizontal = TRUE,
+        frame = FALSE,
+        notch = FALSE,
+        col = cols,
+        xlab = "Taxon subgroup", ylab = "Mean distance to centroid",
+        las = 1) # make labels horizontal
+
+
+# Boxplot of subgroup mean NN distances ----
+# Calculate median values for each subgroup
+mediansNN <- tapply(sexedTaxo$mean_NN_distance, sexedTaxo$Taxon_subgroup, median)
+
+# Assign colors based on median values using viridis palette
+colours <- viridisLite:::viridis(length(mediansNN))
+
+# Match colors to subgroups based on their median values
+cols <- colours[match(mediansNN, sort(mediansNN))]
+
+# Set wider margins - bottom, left, top, right
+par(mar = c(5, 13, 1, 1), 
+    mgp = c(12, 1, 0))
+
+# plot boxplot of mean nearest neighbour distance for each taxon subgroup
+boxplot(mean_NN_distance ~ Taxon_subgroup, data = sexedTaxo,
+        horizontal = TRUE,
+        frame = FALSE,
+        notch = FALSE,
+        col = cols,
+        xlab = "Taxon subgroup", ylab = "Mean nearest neighbour distance",
+        las = 1) # make labels horizontal

@@ -212,7 +212,7 @@ sex_match_fun <- function(data){
 }
 
 # Subset to only species we want to keep (e.g. species identifed by sex_match())
-subset_sex_match <- function(data, spec_to_keep){
+subset_sex_match <- function(data, spec_to_keep, convert_to_numeric = TRUE){
   
   data <- data[data[, "species"] %in% spec_to_keep, ]
   
@@ -220,26 +220,41 @@ subset_sex_match <- function(data, spec_to_keep){
   data <- data[, !colnames(data) %in% c("species", "sex")]
   
   # set class to numeric matrix (for use with dispRity)
-  class(data) <- "numeric"
+  if(convert_to_numeric == TRUE){class(data) <- "numeric"}
   
   return(data)
   
 }
 
 # add species and sex columns
-pca_spp_sex <- function(pca_vals){
+pca_spp_sex <- function(pca_vals, bind_to_data = TRUE){
   
-  # extract species and sex
-  spp_sex <- t(sapply(strsplit(rownames(pca_vals), split = "-"), "[", 1:2))
+  # extract species and sex (old, slower version)
+ # spp_sex <- t(sapply(strsplit(rownames(pca_vals), split = "-"), "[", 1:2))
+  # more efficient version that avoids transposition
+  spp_sex <- do.call(rbind, lapply(strsplit(rownames(pca_vals), split = "-"), "[", 1:2))
   
-  # add species and sex columns
-  pca_vals <- cbind(
-    pca_vals,
-    species = spp_sex[, 1],
-    sex = spp_sex[, 2]
-  )
+  if(bind_to_data == TRUE){
+    
+    # add species and sex columns
+    pca_vals <- cbind(
+      pca_vals,
+      species = spp_sex[, 1],
+      sex = spp_sex[, 2]
+    )
+    
+    # return data bound to species and sex columns
+    return(pca_vals)
+    
+  } else if(bind_to_data == FALSE){
+    
+    colnames(spp_sex) <- c("species", "sex")
+    
+    # only return species and sex columns
+    return(spp_sex)
+    
+  }
   
-  return(pca_vals)
   
 }
 
@@ -271,6 +286,32 @@ combine_raster_list <- function(raster_list){
 # make wrapper function for averaging (allows selection of average type e.g. mean, median)
 avg <- function(vals, avg_type, na.rm = TRUE){
   return(get(avg_type)(vals, na.rm = na.rm))
+}
+
+# Set dispRity metric
+set_metric <- function(metric){
+  
+  # set dispRity metric
+  if(metric == "centr-dist"){
+    metric_get <- get("centroids")
+  } else if (metric == "nn-k"){
+    metric_get <- get("mean.nn.dist")
+  }else if (metric == "nn-count"){
+    metric_get <- get("count.neighbours")
+  } else if(metric == "nn-all"){
+    metric_get <- get("neighbours")
+  } else if(metric == "convhull.volume"){
+    metric_get <- get("convhull.volume")
+  } else if(metric == "displacements"){
+    metric_get <- get("displacements")
+  } else if(metric == "sum.variances"){
+    metric_get <- list(sum, variances)
+  } else if(metric == "sum.ranges"){
+    metric_get <- list(sum, ranges)
+  } 
+  
+  return(metric_get)
+  
 }
 
 # Calculate assemblage-level disparity metric
@@ -322,7 +363,14 @@ calc_metric_gridcell <- function(pam_row, pca_data, metric, avg_par, min_species
   )$disparity[[1]][[1]]
   
   # calculate average if output is dimension-level 2
-  metric_type <- dispRity::make.metric(metric_get, silent = TRUE)[["type"]]
+  # note that for metrics using more than one function (e.g. sum of variances), we just test the
+  # first function in the list as this provides the level
+  if(class(metric_get) == "list"){
+    metric_type <- dispRity::make.metric(metric_get[[1]], silent = TRUE)[["type"]]
+  } else if(class(metric_get) == "function"){
+    metric_type <- dispRity::make.metric(metric_get, silent = TRUE)[["type"]]
+  }
+  
   if(metric_type == "level2"){
     
     # calculate average (using wrapper function)
@@ -553,6 +601,10 @@ plot_div_raster <- function(div_rast,
     lgd_metric <- paste0(avg_par, " number\nof nearest neighbours\nin radius r ")
   } else if(metric == "convhull.volume"){
     lgd_metric <- paste0("Convex hull\nhypervolume ")
+  } else if(metric == "sum.variances"){
+    lgd_metric <- paste0("Sum of variances")
+  } else {
+    lgd_metric <- "Diversity"
   }
   
   
