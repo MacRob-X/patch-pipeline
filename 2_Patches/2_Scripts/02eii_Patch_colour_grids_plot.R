@@ -16,16 +16,23 @@ rm(list=ls())
 clade <- "Passeriformes"
 ## Choose colour space mapping
 ## Note that if usmldbl or usmldblr, will have to manually modify date in filename below
-space <- "ab"
+space <- "lab"
+# Restrict to only species for which we have male and female data?
+mf_restrict <- TRUE
+if(mf_restrict == TRUE){
+  spec_sex <- "matchedsex"
+} else{
+  spec_sex <- "allspecimens"
+}
 ## UMAP or PCA space?
 ## FALSE - use the PCA space
 ## TRUE - load a UMAP space from a file
 ## "perform" - load a PCA space from a file, then perform UMAP on it
 ## Note that if umap == TRUE, user will have to manually set path to umap file
-load_umap <- TRUE
+load_umap <- FALSE
 umap_filepath <- here::here(
   "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
-  paste(clade, "patches", space, "pca.canonUMAP.rds", sep = ".")
+  paste(clade, spec_sex, "patches", space, "pca.canonUMAP.rds", sep = ".")
 )
 # umap_filepath <- here::here(
 #   "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
@@ -135,7 +142,7 @@ if(load_umap == TRUE | perform_umap == TRUE){
 png(
   here::here(
     "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", space, 
-    paste(clade, "patches", space, x_axis, y_axis, "colour_grids.png", sep = "_")
+    paste(clade, spec_sex, "patches", space, x_axis, y_axis, "colour_grids.png", sep = "_")
   ),
   width = png_width, height = png_height,
   units = "px",

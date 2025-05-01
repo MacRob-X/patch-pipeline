@@ -16,7 +16,7 @@ source("./2_Patches/2_Scripts/R/patch_plotting.R")
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Neoaves"
+clade <- "Passeriformes"
 # Restrict to only species for which we have male and female data?
 mf_restrict <- TRUE
 
@@ -30,7 +30,7 @@ px <- readRDS(
   )
 )
 
-# Restrict to only males and females, if requested
+# Restrict to only males and females, if requested - remove all unknown sex specimens
 if(mf_restrict == TRUE){
   
   # get species for which we have both male AND female data
@@ -39,6 +39,7 @@ if(mf_restrict == TRUE){
   mf_species <- males[!is.na(match(males, females))]
   
   px <- px[px[["species"]] %in% mf_species, ]
+  px <- px[px[["sex"]] != "U", ]
   
 }
 

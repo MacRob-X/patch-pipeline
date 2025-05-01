@@ -178,7 +178,7 @@ if(group == "neoaves"){
 px <- aggregate(cbind(vR, vG, vB, uR, uG, uB) ~ species + sex + region, px, mean)
 
 # # Select only species with both Male and Female data (if necessary)
-# px <- subset(px, sex%in%c("M","F"))
+# px <- subset(px, sex %in% c("M","F"))
 # px <- subset(px, species%in%names(table(px$species))[table(px$species)==20])
 
 # -------------------------------------------------------------------------------- #
