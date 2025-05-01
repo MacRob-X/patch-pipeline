@@ -15,7 +15,7 @@ library(parallel)
 library(dispRity)
 
 
-# Load shared functions
+# Load shared functions ----
 source(
   here::here(
     "2_Patches", "2_Scripts", "R", "mapping.R"
@@ -45,17 +45,17 @@ space <- "lab"
 # select whether to use matched sex data (""all" or "matchedsex")
 # "matchedsex" will use diversity metrics calculated on a subset of data containing only species
 # for which we have both a male and female specimen (and excluding specimens of unknown sex)
-sex_match <- "allspecimens"
+sex_match <- "matchedsex"
 # select sex of interest ("all", "male_female", "male_only", "female_only", "unknown_only")
 sex_interest <- "male_female"
-# select metric ("centr-dist", "nn-k", "nn-count", "sum.variances)
-metric <- "sum.variances"
+# select metric ("centr-dist", "nn-k", "nn-count", "sum.variances", "sum.ranges")
+metric <- "centr-dist"
 # select type of averaging to use ("mean" or "median")
-avg_par <- "mean"
+avg_par <- "median"
 # select whether to calculate local or global diversity loss (i.e., mean distance to local or global centroid)
 div_loss_type <- "local"
 # select number of null distributions to generate
-n_sims <- 10
+n_sims <- 100
 # select whether to exclude grid cells with species richness below a certain threshold (e.g. 5)
 # set as 0 if no threshold wanted
 sr_threshold <- 5
@@ -176,7 +176,7 @@ region_shapes <- sf::st_transform(region_shapes, crs = terra::crs(null_rast, pro
 sexes <- set_sex_list(sex_interest)
 
 # now apply a function to extract named vector lists of values for each sex individually
-sexed_pca_list <- lapply(sexes, extract_sex_vals, div_data = pca_dat)
+sexed_pca_list <- lapply(sexes, extract_sex_vals, div_data = pca_dat, assemblage_level = TRUE)
 names(sexed_pca_list) <- sexes
 
 
@@ -249,13 +249,17 @@ wrapper_fn <- function(sex){
 # ------------------------------------------------------------
 
 # Non-parallelised version (working)
+
+# get number of regions to apply across (this method is much faster than nrow())
+n_regions <- length(attr(region_shapes, "row.names"))
+ 
 # apply function across each sexed dataset
 results <- lapply(sexes, function(sex){
   
   pca_sexed <- sexed_pca_list[[sex]]
   
   # apply function across each region (row) in sf object
-  lapply(1:nrow(region_shapes), function(region_number) {
+  lapply(1:n_regions, function(region_number) {
     
     region_sf <- region_shapes[region_number, ]
     
@@ -270,7 +274,8 @@ results <- lapply(sexes, function(sex){
       parallel_run = FALSE,
       append_sf = TRUE,
       # cluster = cl,
-      regions = regions
+      regions = regions,
+      centroid = div_loss_type
     )
   })
   
@@ -311,7 +316,7 @@ region_results <- region_results[rows_to_keep, ]
 names(results_dfs) <- sexes
 
 # save intermediate results
-results_filename <- paste0(paste(clade, space, "regionalSESplotdata", metric, avg_par, regions, paste0(n_sims, "sims"), paste0(iucn_type, "iucn"), sex_match, pam_res, pam_type, pam_seas, sep = "_"), ".rds")
+results_filename <- paste0(paste(clade, space, "regionalSESplotdata", div_loss_type, metric, avg_par, regions, paste0(n_sims, "sims"), paste0(iucn_type, "iucn"), sex_match, pam_res, pam_type, pam_seas, sep = "_"), ".rds")
 saveRDS(
   results_dfs, 
   here::here(
@@ -323,7 +328,7 @@ saveRDS(
 # plot results ----
 
 # load results (for plotting)
-results_filename <- paste0(paste(clade, space, "regionalSESplotdata", metric, avg_par, regions, paste0(n_sims, "sims"), paste0(iucn_type, "iucn"), sex_match, pam_res, pam_type, pam_seas, sep = "_"), ".rds")
+results_filename <- paste0(paste(clade, space, "regionalSESplotdata", div_loss_type, metric, avg_par, regions, paste0(n_sims, "sims"), paste0(iucn_type, "iucn"), sex_match, pam_res, pam_type, pam_seas, sep = "_"), ".rds")
 results_dfs <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "6_Spatial_mapping", "2_Regional_diversity_SES", pam_res, space,
@@ -439,7 +444,7 @@ layout_matrix <- matrix(
 )
 
 # set png filename
-png_filename <- paste0(paste(clade, space, "regionalSES_local", metric, avg_par, regions, paste0(n_sims, "sims"), paste0(iucn_type, "iucn"), sex_match, pam_res, pam_type, pam_seas, sep = "_"), ".png")
+png_filename <- paste0(paste(clade, space, "regionalSES", div_loss_type, metric, avg_par, regions, paste0(n_sims, "sims"), paste0(iucn_type, "iucn"), sex_match, pam_res, pam_type, pam_seas, sep = "_"), ".png")
 # initialise png saving
 png(
   here::here(

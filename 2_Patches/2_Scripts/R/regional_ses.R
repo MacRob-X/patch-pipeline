@@ -1,6 +1,6 @@
 
 # calculate SES for trimming of a single IUCN level (cumulatively)
-calc_iucn_ses <- function(pca_region, region_species, iucn_data, iucn_cat, metric, n_sims, avg_par, parallel_run = FALSE, cluster = NULL){
+calc_iucn_ses <- function(pca_region, region_species, iucn_data, iucn_cat, metric, centroid, n_sims, avg_par, parallel_run = FALSE, cluster = NULL){
   
   # set dispRity metric
   # if(metric == "centr-dist"){
@@ -52,9 +52,20 @@ calc_iucn_ses <- function(pca_region, region_species, iucn_data, iucn_cat, metri
   # clip PCA data to only species present in regions (no CR species)
   pca_subset <- pca_region[trimmed_species, ]
   
-  # calculate mean of metric of all species in ROI in IUCN cats of interest
-  roi_metric_avg <- avg(dispRity(pca_subset, metric = metric_get)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+  # if using distance to global centroid, set this at the centre and calculate metric
+  if(metric == "centr-dist" & centroid == "global"){
+    
+    centr_pos <- rep(0, ncol(pca_region))
+    roi_metric_avg <- avg(dispRity(pca_subset, metric = metric_get, centroid = centr_pos)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+    
+  } else {
+    
+    # calculate average of metric of all species in region
+    roi_metric_avg <- avg(dispRity(pca_subset, metric = metric_get)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+    
+  }
   
+
   # add species richness and average metric to results vector
   res_vec["species_richness"] <- length(trimmed_species)
   res_vec["raw"] <- roi_metric_avg
@@ -70,7 +81,7 @@ calc_iucn_ses <- function(pca_region, region_species, iucn_data, iucn_cat, metri
     cluster <- parallel::makeCluster(no_cores)
     
     # export necessary objects to the cluster
-    parallel::clusterExport(cluster, c("region_species", "trimmed_species", "pca_region", "metric_get", "dispRity", "avg", "avg_par", metric_get), envir = environment())
+    parallel::clusterExport(cluster, c("region_species", "trimmed_species", "pca_region", "metric_get", "dispRity", "avg", "avg_par", "centroid", metric_get), envir = environment())
     
     
     # Calculate SES compared to simulations of random loss of species, using parallelised lapply
@@ -84,7 +95,18 @@ calc_iucn_ses <- function(pca_region, region_species, iucn_data, iucn_cat, metri
           trait_vec <- matrix(pca_region[coms, ], ncol = dim(pca_region)[2])
           
           # Calculate the disparity value for the current simulation (column j)
-          disparity_value <- avg(dispRity(trait_vec, metric = metric_get)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+          # if using distance to global centroid, set this at the centre and calculate metric
+          if(metric == "centr-dist" & centroid == "global"){
+            
+            centr_pos <- rep(0, ncol(pca_region))
+            disparity_value <- avg(dispRity(trait_vec, metric = metric_get, centroid = centr_pos)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+            
+          } else {
+            
+            # Calculate the disparity value for the current simulation (column j)
+            disparity_value <- avg(dispRity(trait_vec, metric = metric_get)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+            
+          }
           
           return(disparity_value)
         }
@@ -103,7 +125,18 @@ calc_iucn_ses <- function(pca_region, region_species, iucn_data, iucn_cat, metri
           trait_vec <- matrix(pca_region[coms, ], ncol = dim(pca_region)[2])
           
           # Calculate the disparity value for the current simulation (column j)
-          disparity_value <- avg(dispRity(trait_vec, metric = metric_get)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+          # if using distance to global centroid, set this at the centre and calculate metric
+          if(metric == "centr-dist" & centroid == "global"){
+            
+            centr_pos <- rep(0, ncol(pca_region))
+            disparity_value <- avg(dispRity(trait_vec, metric = metric_get, centroid = centr_pos)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+            
+          } else {
+            
+            # Calculate the disparity value for the current simulation (column j)
+            disparity_value <- avg(dispRity(trait_vec, metric = metric_get)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+            
+          }
           
           return(disparity_value)
         }
@@ -125,7 +158,7 @@ calc_iucn_ses <- function(pca_region, region_species, iucn_data, iucn_cat, metri
 }
 
 # calculate SESs for sequential trimming of IUCN levels for a single region
-calc_region_ses <- function(region_sf, pca_data, pam, null_raster, iucn, metric, n_sims, regions, append_sf = TRUE, ...){
+calc_region_ses <- function(region_sf, pca_data, pam, null_raster, iucn, metric, centroid, n_sims, regions, append_sf = TRUE, ...){
   
   # show which region is being processed
   if(regions == "biomes"){
@@ -203,8 +236,16 @@ calc_region_ses <- function(region_sf, pca_data, pam, null_raster, iucn, metric,
   # clip PCA data to only species present in region
   pca_region <- pca_data[species_pres, ]
   
-  # calculate average of metric of all species in region
-  roi_metric_avg <- avg(dispRity(pca_region, metric = metric_get)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+  # if using distance to global centroid, set this at the centre and calculate metric
+  if(metric == "centr-dist" & centroid == "global"){
+    centr_pos <- rep(0, ncol(pca_region))
+    roi_metric_avg <- avg(dispRity(pca_region, metric = metric_get, centroid = centr_pos)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+  } else {
+    # calculate average of metric of all species in region
+    roi_metric_avg <- avg(dispRity(pca_region, metric = metric_get)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+  }
+  
+  
   
   # add species richness and average metric to results table
   results[1, "species_richness"] <- length(species_pres)
@@ -327,3 +368,4 @@ calc_group_ses <- function(group, pca_data, taxonomy, iucn, metric, tax_level, n
   return(results)
     
 }
+
