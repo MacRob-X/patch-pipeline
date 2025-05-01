@@ -22,17 +22,28 @@ source(
   )
 )
 
+# make wrapper function for averaging (allows selection of average type e.g. mean, median)
+avg <- function(vals, avg_type, na.rm = TRUE){
+  return(get(avg_type)(vals, na.rm = na.rm))
+}
+
 ## EDITABLE CODE ## ----
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Passeriformes"
+clade <- "Neoaves"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
-space <- "usmlraw"
+space <- "lab"
 # select sex ("M", "F", "All")
 sex <- "F"
+# select whether to use matched sex data (""all" or "matchedsex")
+# "matchedsex" will use diversity metrics calculated on a subset of data containing only species
+# for which we have both a male and female specimen (and excluding specimens of unknown sex)
+sex_match <- "matchedsex"
 # select metric ("centr-dist", "nn-k", "nn-count")
 # note that nn-k is EXTREMELY slow to run - needs parallelisation (but will probably still
 # be too slow to run)
 metric <- "centr-dist"
+# select type of averaging to use ("mean" or "median")
+avg_par <- "mean"
 # select number of null distributions to generate
 n_sims <- 1000
 # select whther to use liberal, conservative, or nominate IUCN data
@@ -48,7 +59,7 @@ iucn_type <- "nominate"
 # Load data ----
 
 # load patch data (PCA of whichever colourspace - generated in 02_Patch_Analyse_features.R)
-pca_filename <- paste(clade, "patches.231030.PCAcolspaces", "rds", sep = ".")
+pca_filename <- paste(clade, sex_match,  "patches.231030.PCAcolspaces", "rds", sep = ".")
 pca_all <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
@@ -108,9 +119,8 @@ rm(spec_iucn, spec_trait)
 # add extra rows in species for M/F/U
 species$sex <- "M"
 species_F <- species; species_F$sex <- "F"
-species_U <- species; species_U$sex <- "U"
-species <- rbind(species, species_F, species_U)
-rm(species_F, species_U)
+species <- rbind(species, species_F)
+rm(species_F)
 rownames(species) <- paste(species$species, species$sex, sep = "-")
 species <- species[rownames(species) %in% rownames(trait), ]
 # reorder to match trait data
@@ -120,6 +130,11 @@ species <- species[match(rownames(trait), rownames(species)), ]
 if(sex != "All"){
   trait <- trait[trait[, "sex"] == sex, ]
   species <- species[species[, "sex"] == sex, ]
+  unique_species <- NULL # so the parallelisation cluster export doesn't throw an error
+} else {
+  # get unique species (to subset species/sex pairs later)
+  unique_species <- unique(trait[["species"]])
+
 }
 
 
@@ -149,7 +164,7 @@ all <- rownames(species)
 trait_vec <- matrix(traits[all,], ncol=dim(traits)[2])
 # calculate SR & Mean distance to centroid
 res[1,2] <- length(all)
-res[1,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
+res[1,3] <- avg(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]], avg_par)
 
 # get collections of species with threat levels sequentially trimmed
 noCR <- rownames(species)[species$iucn_cat != "CR"]
@@ -161,13 +176,13 @@ noNT <- rownames(species)[species$iucn_cat != "CR" & species$iucn_cat != "EN" & 
 no_cores <- parallel::detectCores() - 2
 cl <- parallel::makeCluster(no_cores)
 # export necessary objects to the cluster
-parallel::clusterExport(cl, c("all", "noCR", "noEN", "noVU", "noNT", "traits", "metric_get", "dispRity", metric_get))
+parallel::clusterExport(cl, c("all", "noCR", "noEN", "noVU", "noNT", "traits", "unique_species", "sex", "metric_get", "dispRity", "avg", "avg_par", metric_get))
 
 # extract traits for species in the random community
 trait_vec <- matrix(traits[noCR,], ncol=dim(traits)[2])
-# calculate SR & Mean distance to centroid
+# calculate SR & median distance to centroid
 res[2,2] <- length(noCR)
-res[2,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
+res[2,3] <- avg(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]], avg_par)
 
 # Use parLapply to replace the for loop with a parallelised apply function for speed
 sims[1, ] <- unlist(
@@ -175,12 +190,19 @@ sims[1, ] <- unlist(
     cl = cl,
     1:ncol(sims), 
     function(j) {
+      
+      # get random species to remove
+      if(sex == "All"){
+        spp_sample <- sample(x = unique_species, size = length(noCR)/2, replace = FALSE)
+        coms <- c(paste0(spp_sample, "-M"), paste0(spp_sample, "-F"))
+      } else {
+        coms <- sample(x = all, size = length(noCR), replace = FALSE)
+      }
   
-      coms <- sample(x = all, size = length(noCR), replace = FALSE)
       trait_vec <- matrix(traits[coms, ], ncol = dim(traits)[2])
       
       # Calculate the disparity value for the current simulation (column j)
-      disparity_value <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
+      disparity_value <- avg(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]], avg_par)
       
       return(disparity_value)
     }
@@ -198,7 +220,7 @@ res[2,6] <- sd(sims)/sqrt(length(sims))
 trait_vec <- matrix(traits[noEN,], ncol=dim(traits)[2])
 # calculate SR & Mean distance to centroid
 res[3,2] <- length(noEN)
-res[3,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
+res[3,3] <- avg(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]], avg_par)
 
 # Use parLapply to replace the for loop with a parallelised apply function for speed
 sims[1, ] <- unlist(
@@ -207,11 +229,18 @@ sims[1, ] <- unlist(
     1:ncol(sims), 
     function(j) {
       
-      coms <- sample(x = all, size = length(noEN), replace = FALSE)
+      # get random species to remove
+      if(sex == "All"){
+        spp_sample <- sample(x = unique_species, size = length(noEN)/2, replace = FALSE)
+        coms <- c(paste0(spp_sample, "-M"), paste0(spp_sample, "-F"))
+      } else {
+        coms <- sample(x = all, size = length(noEN), replace = FALSE)
+      }
+      
       trait_vec <- matrix(traits[coms, ], ncol = dim(traits)[2])
       
       # Calculate the disparity value for the current simulation (column j)
-      disparity_value <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
+      disparity_value <- avg(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]], avg_par)
       
       return(disparity_value)
     }
@@ -227,7 +256,7 @@ res[3,6] <- sd(sims)/sqrt(length(sims))
 trait_vec <- matrix(traits[noVU,], ncol=dim(traits)[2])
 # calculate SR & Mean distance to centroid
 res[4,2] <- length(noVU)
-res[4,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
+res[4,3] <- avg(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]], avg_par)
 
 # Use parLapply to replace the for loop with a parallelised apply function for speed
 sims[1, ] <- unlist(
@@ -236,11 +265,18 @@ sims[1, ] <- unlist(
     1:ncol(sims), 
     function(j) {
       
-      coms <- sample(x = all, size = length(noVU), replace = FALSE)
+      # get random species to remove
+      if(sex == "All"){
+        spp_sample <- sample(x = unique_species, size = length(noVU)/2, replace = FALSE)
+        coms <- c(paste0(spp_sample, "-M"), paste0(spp_sample, "-F"))
+      } else {
+        coms <- sample(x = all, size = length(noVU), replace = FALSE)
+      }
+      
       trait_vec <- matrix(traits[coms, ], ncol = dim(traits)[2])
       
       # Calculate the disparity value for the current simulation (column j)
-      disparity_value <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
+      disparity_value <- avg(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]], avg_par)
       
       return(disparity_value)
     }
@@ -256,7 +292,7 @@ res[4,6] <- sd(sims)/sqrt(length(sims))
 trait_vec <- matrix(traits[noNT,], ncol=dim(traits)[2])
 # calculate SR & Mean distance to centroid
 res[5,2] <- length(noNT)
-res[5,3] <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
+res[5,3] <- avg(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]], avg_par)
 
 # Use parLapply to replace the for loop with a parallelised apply function for speed
 sims[1, ] <- unlist(
@@ -265,11 +301,18 @@ sims[1, ] <- unlist(
     1:ncol(sims), 
     function(j) {
       
-      coms <- sample(x = all, size = length(noNT), replace = FALSE)
+      # get random species to remove
+      if(sex == "All"){
+        spp_sample <- sample(x = unique_species, size = length(noNT)/2, replace = FALSE)
+        coms <- c(paste0(spp_sample, "-M"), paste0(spp_sample, "-F"))
+      } else {
+        coms <- sample(x = all, size = length(noNT), replace = FALSE)
+      }
+      
       trait_vec <- matrix(traits[coms, ], ncol = dim(traits)[2])
       
       # Calculate the disparity value for the current simulation (column j)
-      disparity_value <- mean(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]])
+      disparity_value <- avg(dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]], avg_par)
       
       return(disparity_value)
     }
@@ -308,7 +351,7 @@ res$Metric <- "Trait Diversity"
 
 # Save results as csv
 # set filename
-filename <- paste0(clade, "_patch_", space,  "_SES_", "nsims", n_sims, "_", metric, "_", sex, "_", iucn_type, "-iucn", ".csv")
+filename <- paste0(clade, "_patch_", space,  "_SES_", "nsims", n_sims, "_", avg_par, "_", metric, "_", sex, "_", iucn_type, "-iucn", ".csv")
 write.csv(
   res, 
   here::here(
@@ -321,7 +364,7 @@ write.csv(
 # Plot results ----
 
 # clear environment (except chosen variables)
-rm(list=setdiff(ls(), c("clade", "space", "metric", "n_sims", "iucn_type")))
+rm(list=setdiff(ls(), c("clade", "space", "metric", "n_sims", "iucn_type", "avg_par")))
 
 # load in results and get species richness as a proportion
 # create dataframe to populate
@@ -329,7 +372,7 @@ res <- data.frame(matrix(NA, nrow = 0, ncol = 9))
 colnames(res) <- c("IUCN", "SR", "Raw", "NULL_MEAN", "NULL_SD", "NULL_SE", "SES", "Metric", "SR_prop")
 for (sex in c("M", "F", "All")){
   # set file path
-  filename <- paste0(clade, "_patch_", space,  "_SES_", "nsims", n_sims, "_", metric, "_", sex, "_", iucn_type, "-iucn", ".csv")
+  filename <- paste0(clade, "_patch_", space,  "_SES_", "nsims", n_sims, "_", avg_par, "_", metric, "_", sex, "_", iucn_type, "-iucn", ".csv")
   # load file and calculate proportional species richness
   temp_res <- read.csv(
     here::here(
@@ -362,9 +405,9 @@ sex_labeller <- function(variable, value){
 # plot (subset by sex if required)
 # note that there's no point in adding error bars because the error's so small you can't see it
 p <- res %>% 
-  filter(
-    sex != "All"
-  ) %>%
+  # filter(
+  #   sex != "All"
+  # ) %>%
   ggplot() + 
   geom_point(aes(x = sr_prop, y = SES, colour = IUCN), size = 2.5, shape = 17) + 
   geom_line(aes(x = sr_prop, y = SES), alpha = 0.6) +
@@ -377,7 +420,7 @@ p <- res %>%
   geom_hline(yintercept = 0, linetype = "dashed") + 
   geom_hline(yintercept = -2, linetype = "dashed") +
   theme_light() + 
-  facet_wrap(~ sex, ncol = 2, labeller = sex_labeller) + 
+  facet_wrap(~ sex, ncol = 3, labeller = sex_labeller) + 
 #  ggtitle(space) + 
   theme_bw() + 
   theme(text=element_text(size=12,  family="Century Gothic"))
@@ -385,7 +428,7 @@ p <- res %>%
 p
 
 # Save as png
-png_filename <- paste0(clade, "_patch_", space,  "_SES_", "nsims", n_sims, "_", metric, "_", iucn_type, "-iucn", ".png")
+png_filename <- paste0(clade, "_patch_", space,  "_SES_", "nsims", n_sims, "_", avg_par, "_", metric, "_", iucn_type, "-iucn", ".png")
 png(
   here::here(
     "2_Patches", "4_OutputPlots", "2_Diversity_measures", "1_Diversity_extinction_risk", 
