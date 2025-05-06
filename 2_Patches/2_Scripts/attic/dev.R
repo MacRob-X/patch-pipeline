@@ -362,3 +362,386 @@ metric_dists %>%
   ggplot(aes(x = metric, fill = iucn_loss)) + 
   geom_density(alpha = 0.5) + 
   facet_wrap(~iucn_loss + sex, nrow = 5)
+
+
+
+# 01/05/2025 ----
+# SES of aesthetic attractiveness loss
+# using iratebirds data
+
+# Calculate Standard Effect Size (SES) of change in diversity metric as species at 
+# different IUCN threat levels are sequentially lost
+# Robert MacDonald
+# Edited 29/08/2024
+
+# Note: this code is very heavily based on code from Hughes et al. (2022) Curr Biol
+
+# attach libraries
+library(dplyr)
+library(dispRity)
+library(ggplot2)
+library(parallel)
+library(extrafont)
+
+# clear environment
+rm(list=ls())
+
+# custom dispRity metrics
+source(
+  here::here(
+    "3_SharedScripts", "dispRity_metric_functions.R"
+  )
+)
+
+## EDITABLE CODE ## ----
+
+# select number of null distributions to generate
+n_sims <- 1000
+# select whther to use liberal, conservative, or nominate IUCN data
+# "liberal" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
+# are assigned the highest threat level of the multiple species
+# "conservative" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
+# are assigned the lowest threat level of the multiple species
+# "nominate" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
+# are assigned the threat level of the BL species that corresponds to the nominate subspecies
+iucn_type <- "nominate"
+## END EDITABLE CODE ##
+
+# Load data ----
+
+# load iratebirds data (PCA of whichever colourspace - generated in 02_Patch_Analyse_features.R)
+# Filter to Neoaves
+irate_master <- read.csv(
+  here::here(
+    "4_SharedInputData", "iratebirds_data", "iratebirds_final_predictions_average_fullmodel_subsetmodel_151122.csv"
+  ),sep = ";" 
+) %>% 
+  filter(
+    order != "Struthioniformes", 
+    order != "Rheiformes", 
+    order != "Casuariiformes", 
+    order != "Apterygiformes", 
+    order != "Tinamiformes", 
+    order != "Galliformes", 
+    order != "Anseriformes"
+  )
+
+# load IUCN Red List data
+iucn_filename <- paste0("IUCN_RedList_data_130324", ".rds")
+iucn <- readRDS(
+  here::here(
+    "4_SharedInputData", iucn_filename
+  )
+) %>% 
+  select(scientific_name, category) %>% 
+  mutate(scientific_name = gsub(" ", "_", scientific_name)) %>% 
+  rename(species_birdlife = scientific_name, iucn_cat = category)
+
+
+# join iratebirds data to IUCN data
+# NOTE that these are not properly matched, so we're going to lose lots of species and possibly
+# bias the results - this is messing around only
+
+
+####################    
+### 2: GLOBAL ANALYSIS
+####################   
+## a) Morphological diversity
+## NB: To generate Table S1, the code below can be ran on individual PCs.
+## E.g. trait <- trait[,1]
+
+
+
+# Matrix containing attractiveness data (remove duplicates):
+trait <- irate_master %>% 
+  as.data.frame() %>% 
+  rename(attract = predicted_attractiveness_full_model) %>% 
+  mutate(
+    species = sci_name,
+    attract = as.numeric(gsub(",", ".", attract))
+  ) %>% 
+  select(species, attract) %>% 
+  mutate(species = gsub(" ", "_", species)) %>% 
+  # Filter out subspecies
+  filter(stringr::str_count(species, "_") == 1) %>% 
+  distinct()
+
+# Species matched to IUCN categories:
+species <- iucn %>% 
+  rename(
+    species = species_birdlife
+  ) %>% 
+  select(
+    species, iucn_cat
+  ) %>% 
+  filter(
+    species %in% trait[, "species"]
+  )
+
+# remove species not in IUCN data
+trait <- trait[trait[, "species"] %in% species[, "species"], ]
+
+# check species are identical in both matrices
+spec_iucn <- sort(species[, "species"])
+spec_trait <- sort(trait[, "species"])
+identical(spec_iucn, spec_trait)
+rm(spec_iucn, spec_trait)
+
+# add rownames
+rownames(species) <- species$species
+rownames(trait) <- trait$species
+species <- species[rownames(species) %in% rownames(trait), ]
+# reorder to match trait data
+species <- species[match(rownames(trait), rownames(species)), ]
+
+# remove species column from trait data
+trait <- trait %>% 
+  select(attract)
+
+
+### OUTPUT DATA FRAME
+res <- matrix(NA, nrow=5, ncol = 6)
+
+a <- n_sims #change depending on number of simulations  
+sims <- matrix(NA, nrow=1, ncol = a) #place to store simulations for SES
+
+
+all <- rownames(species)
+# extract trait for species in the random community
+trait_vec <- matrix(trait[all,], ncol=dim(trait)[2])
+# calculate SR & median aesthetic attractiveness
+res[1,2] <- length(all)
+res[1,3] <- median(trait_vec)
+
+# get collections of species with threat levels sequentially trimmed
+noCR <- rownames(species)[species$iucn_cat != "CR"]
+noEN <- rownames(species)[species$iucn_cat != "CR" & species$iucn_cat != "EN"]
+noVU <- rownames(species)[species$iucn_cat != "CR" & species$iucn_cat != "EN" & species$iucn_cat != "VU"]
+noNT <- rownames(species)[species$iucn_cat != "CR" & species$iucn_cat != "EN" & species$iucn_cat != "VU" & species$iucn_cat != "NT"]
+
+# for parallelisation, set up a cluster using the number of cores (2 less than total number of laptop cores)
+no_cores <- parallel::detectCores() - 2
+cl <- parallel::makeCluster(no_cores)
+# export necessary objects to the cluster
+parallel::clusterExport(cl, c("all", "noCR", "noEN", "noVU", "noNT", "trait"))
+
+# extract trait for species in the random community
+trait_vec <- matrix(trait[noCR,], ncol=dim(trait)[2])
+# calculate SR & Mean distance to centroid
+res[2,2] <- length(noCR)
+res[2,3] <- median(trait_vec)
+
+# Use parLapply to replace the for loop with a parallelised apply function for speed
+sims[1, ] <- unlist(
+  parallel::parLapply(
+    cl = cl,
+    1:ncol(sims), 
+    function(j) {
+      
+      coms <- sample(x = all, size = length(noCR), replace = FALSE)
+      trait_vec <- matrix(trait[coms, ], ncol = dim(trait)[2])
+      
+      # Calculate the disparity value for the current simulation (column j)
+      disparity_value <-median(trait_vec)
+      
+      return(disparity_value)
+    }
+  )
+)
+
+
+# add results to table
+res[2,4] <- mean(sims)
+res[2,5] <- sd(sims)
+res[2,6] <- sd(sims)/sqrt(length(sims))
+
+
+# extract trait for species in the random community
+trait_vec <- matrix(trait[noEN,], ncol=dim(trait)[2])
+# calculate SR & Mean distance to centroid
+res[3,2] <- length(noEN)
+res[3,3] <- median(trait_vec)
+
+# Use parLapply to replace the for loop with a parallelised apply function for speed
+sims[1, ] <- unlist(
+  parallel::parLapply(
+    cl = cl,
+    1:ncol(sims), 
+    function(j) {
+      
+      coms <- sample(x = all, size = length(noEN), replace = FALSE)
+      trait_vec <- matrix(trait[coms, ], ncol = dim(trait)[2])
+      
+      # Calculate the disparity value for the current simulation (column j)
+      disparity_value <- median(trait_vec)
+      
+      return(disparity_value)
+    }
+  )
+)
+
+# add results to table
+res[3,4] <- mean(sims)
+res[3,5] <- sd(sims)
+res[3,6] <- sd(sims)/sqrt(length(sims))
+
+# extract trait for species in the random community
+trait_vec <- matrix(trait[noVU,], ncol=dim(trait)[2])
+# calculate SR & Mean distance to centroid
+res[4,2] <- length(noVU)
+res[4,3] <- median(trait_vec)
+
+# Use parLapply to replace the for loop with a parallelised apply function for speed
+sims[1, ] <- unlist(
+  parallel::parLapply(
+    cl = cl,
+    1:ncol(sims), 
+    function(j) {
+      
+      coms <- sample(x = all, size = length(noVU), replace = FALSE)
+      trait_vec <- matrix(trait[coms, ], ncol = dim(trait)[2])
+      
+      # Calculate the disparity value for the current simulation (column j)
+      disparity_value <- median(trait_vec)
+      
+      return(disparity_value)
+    }
+  )
+)
+
+
+res[4,4] <- mean(sims)
+res[4,5] <- sd(sims)
+res[4,6] <- sd(sims)/sqrt(length(sims))
+
+# extract trait for species in the random community
+trait_vec <- matrix(trait[noNT,], ncol=dim(trait)[2])
+# calculate SR & Mean distance to centroid
+res[5,2] <- length(noNT)
+res[5,3] <- median(trait_vec)
+
+# Use parLapply to replace the for loop with a parallelised apply function for speed
+sims[1, ] <- unlist(
+  parallel::parLapply(
+    cl = cl,
+    1:ncol(sims), 
+    function(j) {
+      
+      coms <- sample(x = all, size = length(noNT), replace = FALSE)
+      trait_vec <- matrix(trait[coms, ], ncol = dim(trait)[2])
+      
+      # Calculate the disparity value for the current simulation (column j)
+      disparity_value <- median(trait_vec)
+      
+      return(disparity_value)
+    }
+  )
+)
+
+# stop the cluster
+stopCluster(cl)
+
+res[5,4] <- mean(sims)
+res[5,5] <- sd(sims)
+res[5,6] <- sd(sims)/sqrt(length(sims))
+
+res <- as.data.frame(res)
+
+colnames(res) <- c("IUCN", "SR", "Raw", "NULL_MEAN", "NULL_SD", "NULL_SE")
+
+res$IUCN[1] <- "All Species Retained"
+res$IUCN[2] <- "CR Lost"
+res$IUCN[3] <- "EN Lost"
+res$IUCN[4] <- "VU Lost"
+res$IUCN[5] <- "NT Lost (LC Only Retained)"
+
+res$SR <- as.numeric(res$SR)
+res$Raw <- as.numeric(res$Raw)
+res$NULL_MEAN <- as.numeric(res$NULL_MEAN)
+res$NULL_SD <- as.numeric(res$NULL_SD)
+res$NULL_SE <- as.numeric(res$NULL_SE)
+
+res$SES <- (res$Raw - res$NULL_MEAN)/res$NULL_SD
+str(res)
+res$SES[1] <- 0
+
+res$Metric <- "Trait Diversity"
+
+
+# Save results as csv
+# set filename
+filename <- paste0( "iratebirds_", "SES_", "nsims", n_sims, "_", "attractiveness", "_", iucn_type, "-iucn", ".csv")
+write.csv(
+  res, 
+  here::here(
+    "2_Patches", "3_OutputData", "4_Diversity_measures", filename
+  ), 
+  row.names = FALSE
+)
+
+
+# Plot results ----
+
+# clear environment (except chosen variables)
+rm(list=setdiff(ls(), c("clade", "space", "metric", "n_sims", "iucn_type")))
+
+# load in results and get species richness as a proportion
+filename <- paste0( "iratebirds_", "SES_", "nsims", n_sims, "_", "attractiveness", "_", iucn_type, "-iucn", ".csv")
+res <- read.csv(
+  here::here(
+    "2_Patches", "3_OutputData", "4_Diversity_measures", filename
+  )
+) %>% 
+  mutate(
+    sr_prop = SR / max(SR)
+  )
+
+# convert IUCN cat lost to factor and adjust levels
+res$IUCN <- factor(res$IUCN, levels = c("All Species Retained", "CR Lost", "EN Lost", "VU Lost", "NT Lost (LC Only Retained)"))
+
+
+# plot (subset by sex if required)
+# note that there's no point in adding error bars because the error's so small you can't see it
+p <- res %>% 
+  ggplot() + 
+  geom_point(aes(x = sr_prop, y = SES, colour = IUCN), size = 2.5, shape = 17) + 
+  geom_line(aes(x = sr_prop, y = SES), alpha = 0.6) +
+  #  geom_errorbar(aes(ymin = SES - NULL_SE, ymax = SES + NULL_SE), width=0.005) +
+  scale_x_reverse() + 
+  #  scale_color_discrete(type = viridisLite::rocket(n = nlevels(res$IUCN))) + 
+  scale_color_discrete(type = hcl.colors(n = nlevels(res$IUCN)+1, palette = "Terrain")) + 
+  xlab("Remaining proportional species richness") + ylab("Standard Effect Size") + 
+  labs(colour = "IUCN Status Lost") + 
+  geom_hline(yintercept = 0, linetype = "dashed") + 
+  geom_hline(yintercept = 2, linetype = "dashed") +
+  theme_light() + 
+  #  ggtitle(space) + 
+  theme_bw() + 
+  theme(text=element_text(size=12,  family="Century Gothic"))
+
+p
+
+# Save as png
+png_filename <- paste0("iratebirds_attractiveness", "_SES_", "nsims", n_sims, "_", iucn_type, "-iucn", ".png")
+png(
+  here::here(
+    "2_Patches", "4_OutputPlots", "2_Diversity_measures", "1_Diversity_extinction_risk", 
+    png_filename
+  ),
+  width = 1500, height = 2000/3, res = 150
+)
+p
+dev.off()
+
+
+
+
+############ fixing bug in SES diversity code (completely separate from above code)
+
+if(sex == "All"){
+  spp_sample <- sample(x = unique_species, size = length(noCR)/2, replace = FALSE)
+  coms <- c(paste0(spp_sample, "-M"), paste0(spp_sample, "-F"))
+}
+coms <- sample(x = all, size = length(noCR), replace = FALSE)
+
+
