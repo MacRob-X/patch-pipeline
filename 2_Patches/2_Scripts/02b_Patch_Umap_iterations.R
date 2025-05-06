@@ -15,7 +15,7 @@ source(
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Passeriformes"
+clade <- "Neoaves"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
@@ -57,10 +57,10 @@ taxo <- read.csv(
 # First perform UMAP once with default parameters and preserved seed to get canonical UMAP to 
 # use with other scripts
 
-canon_umap <- umap::umap(pca_all$x, preserve.seed = TRUE)
+canon_umap <- umap::umap(pca_all$x[, 1:12], preserve.seed = TRUE)
 
 # save
-umap_filename <- paste(clade, spec_sex, "patches", space, "pca", "canonUMAP", "rds", sep = ".")
+umap_filename <- paste(clade, spec_sex, "patches", space, "pca1-12", "canonUMAP", "rds", sep = ".")
 saveRDS(canon_umap, 
         file = here::here(
           "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP", 
@@ -257,6 +257,132 @@ plot.FourPatch(min_dist_clean_umaps[[1]],
                )
               )
 
+
+# Grid search of UMAP parameters ----
+
+# create custom config
+custom_config <- umap::umap.defaults
+# set parameters
+nn <- c(5, 15, 50)
+min_dist <- c(0.05, 0.1, 0.5)
+
+# perform UMAP with each configuration
+grid_search_umaps <- lapply(nn, function(nn_i) {
+  
+  # set NN config
+  custom_config$n_neighbors <- nn_i
+  
+  lapply(min_dist, function(md_i, nn_i){
+    
+    # set min dist config
+    custom_config$min_dist <- md_i
+    
+    return(
+      umap::umap(plot_space, config = custom_config)
+    )
+    
+  })
+  
+})
+
+# convert to single list
+grid_search_umaps <- unlist(grid_search_umaps, recursive = FALSE)
+
+# save
+umap_filename <- paste(clade, spec_sex, "patches", space, "pca", "gridSearchUMAPs", date, "rds", sep = ".")
+saveRDS(grid_search_umaps_all, 
+        file = here::here(
+          "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP", 
+          umap_filename
+        )
+)
+
+# reload, if necessary
+date <- "20250506"
+umap_filename <- paste(clade, spec_sex, "patches", space, "pca", "gridSearchUMAPs", date, "rds", sep = ".")
+grid_search_umaps <- readRDS(here::here(
+          "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP", 
+          umap_filename
+        )
+)
+
+# plot all on same plot
+plot_filename <- paste(clade, spec_sex, "patches", space, "pca", "gridSearchUMAPs", date, "png", sep = ".")
+png(
+  here::here(
+    "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", space,
+    plot_filename
+  ),
+  width = 1500,  
+  height = 1500,
+  res = 150  # Higher resolution
+)
+
+# set up layout
+# layout_matrix <- matrix(c(1, 4, 7, 2, 5, 8, 3, 6, 9), nrow = 3, ncol = 3)
+# layout(mat = layout_matrix,
+#        heights = rep(1, times = nrow(layout_matrix)),
+#        widths = rep(1, times = ncol(layout_matrix)))
+par(mfrow = c(3, 3), mar = c(0.5, 0.5, 0.5, 0.5))
+
+for(umap_i in 1:length(grid_search_umaps)){
+  
+  umap <- grid_search_umaps[[umap_i]]
+  
+  colnames(umap$layout) <- c("UMAP1", "UMAP2")
+  x_axis <- "UMAP1"; y_axis <- "UMAP2"
+  
+  
+  plot(umap$layout[, y_axis] ~ umap$layout[, x_axis], 
+       asp = T, 
+       type = "n", 
+       xlab = "", ylab = "", las = 1,
+       xaxt = "n", yaxt = "n"
+       #     xlim = xrange,  ylim = yrange
+  )
+  title(main = paste0("nn = ", umap$config$n_neighbors, ", min_dist = ", umap$config$min_dist))
+  
+  box(lwd = 2)
+  rw <- diff(range(umap$layout[,1]))/12
+  
+  lapply(c(1:1000), function(row){
+    fname <- rownames(umap$layout)[row]
+    fpng <- png::readPNG(paste0(
+      "C:/Users/bop23rxm/Documents/colour_grids_repositioned/",
+      paste(strsplit(fname, split="-")[[1]][1:2], collapse = "_"), ".png"))
+    rasterImage(fpng,
+                xleft = umap$layout[row, x_axis] - (rw/5),
+                ybottom = umap$layout[row, y_axis]-(rw/3),
+                xright = umap$layout[row, x_axis]+(rw/5),
+                ytop = umap$layout[row, y_axis]+(rw/3))
+    cat(paste0("\r", row, " of ", nrow(umap$layout), " processed"))
+  })
+  
+  # Force an update to the graphics device after each batch
+  # This helps prevent memory issues
+  if(interactive()) {
+    Sys.sleep(0.01)  # Small delay to allow graphics to update
+  }
+  
+  # Free up memory
+  gc()
+  
+  # Force the completion of this plot
+  box(lwd = 2)  # Drawing the box again forces the plot to complete
+  
+}
+# Make sure all plotting commands are executed before closing the device
+dev.flush()
+dev.off()
+
+# let's just plot it as points
+layout_matrix <- matrix(c(1, 4, 7, 2, 5, 8, 3, 6, 9), nrow = 3, ncol = 3)
+layout(mat = layout_matrix,
+       heights = rep(1, times = nrow(layout_matrix)),
+       widths = rep(1, times = ncol(layout_matrix)))
+for(umap in grid_search_umaps){
+  plot(umap$layout)
+}
 
 # function to spot check species in certain ranges
 

@@ -13,10 +13,14 @@ rm(list=ls())
 # Choose parameters ----
 ## EDITABLE CODE ##
 ## Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Passeriformes"
+clade <- "Neoaves"
 ## Choose colour space mapping
 ## Note that if usmldbl or usmldblr, will have to manually modify date in filename below
 space <- "lab"
+# select whether to use matched sex data (""all" or "matchedsex")
+# "matchedsex" will use diversity metrics calculated on a subset of data containing only species
+# for which we have both a male and female specimen (and excluding specimens of unknown sex)
+sex_match <- "matchedsex"
 ## UMAP or PCA space?
 ## FALSE - use the PCA space
 ## TRUE - load a UMAP space from a file
@@ -25,7 +29,7 @@ space <- "lab"
 load_umap <- FALSE
 umap_filepath <- here::here(
   "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
-  paste(clade, "patches.pca", space, "UMAPs.iterations.20240927.rds", sep = ".")
+  paste(clade, sex_match, "patches", space, "pca", "canonUMAP.rds", sep = ".")
 )
 # umap_filepath <- here::here(
 #   "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
@@ -33,10 +37,10 @@ umap_filepath <- here::here(
 # )
 # If load_umap == FALSE, can set perform_umap == TRUE
 # to perform UMAP on the loaded PCA and then plot the UMAP axes
-perform_umap <- TRUE
+perform_umap <- FALSE
 ## Choose PCs to plot (if plotting PCA)
-x_axis <- "PC1"
-y_axis <- "PC2"
+x_axis <- "PC2"
+y_axis <- "PC3"
 ## Choose aspect ratio 
 ## -"square" fixes to size 2500x2500px 
 ## - "wrap" sets the axis with the larger range to 2500px and scales the other accordingly)
@@ -47,13 +51,12 @@ y_axis <- "PC2"
 asp_ratio <- "wrap"
 ## Choose font "default" or name font (e.g. "Century Gothic", "AvenirNext LT Pro Regular)
 ## Use extrafont::fonts() to see available fonts
-font_par <- "Avenir"
+font_par <- "AvenirNext LT Pro Regular"
 
 # Load data ----
 
 if(load_umap == TRUE) {
     plot_space <- readr::read_rds(umap_filepath) %>% 
-      magrittr::extract2(1) %>% 
       magrittr::extract2("layout") %>% 
       as.data.frame() %>% 
       rename(
@@ -65,11 +68,11 @@ if(load_umap == TRUE) {
   # set path to file
   pca_filepath <- here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA", 
-    paste(clade, "patches.231030.PCAcolspaces", space, "240925", "rds", sep = ".")
+    paste(clade, sex_match, "patches.231030.PCAcolspaces", "rds", sep = ".")
 #    paste0("Neoaves.patches.231030.PCAcolspaces.", space, ".240829.rds")
   )
   # load data from file
-  pca_all <- readr::read_rds(pca_filepath)
+  pca_all <- readr::read_rds(pca_filepath)[[space]]
   # extract pc scores to plot
   plot_space <- pca_all %>% 
     magrittr::extract2("x") %>% 
@@ -135,7 +138,7 @@ if(load_umap == TRUE | perform_umap == TRUE){
 png(
   here::here(
     "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", space, 
-    paste(clade, "patches", space, x_axis, y_axis, "colour_grids_CG.png", sep = "_")
+    paste(clade, sex_match, "patches", space, x_axis, y_axis, "colour_grids_CG.png", sep = "_")
   ),
   width = png_width, height = png_height,
   units = "px",
@@ -167,6 +170,18 @@ for(i in 1:nrow(plot_space)){
               xright = plot_space[i, x_axis]+(rw/15), 
               ytop = plot_space[i, y_axis]+(rw/9))
   cat(paste0("\r", i, " of ", nrow(plot_space), " processed"))
+  
+  if(isTRUE(all.equal(i/500, as.integer(i/500)))){
+    # Force an update to the graphics device after each 500 images
+    # This helps prevent memory issues
+    if(interactive()) {
+      Sys.sleep(0.01)  # Small delay to allow graphics to update
+    }
+    
+    # Free up memory
+    gc()
+  }
+  
 }
 
 dev.off()
