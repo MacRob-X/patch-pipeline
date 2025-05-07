@@ -542,7 +542,7 @@ plot_div_raster <- function(div_rast,
                             world_spatvec,
                             div_metric,
                             scale_type = c("binned", "continuous"), 
-                            div_breaks = NULL, sr_breaks = NULL, 
+                            col_breaks = NULL,
                             pal_choice = c("viridis", "turbo", "custom"), 
                             plot_sr = FALSE,
                             save_png = FALSE,
@@ -553,6 +553,12 @@ plot_div_raster <- function(div_rast,
   layer_names <- terra::names(div_rast)
   
   # set up colour scale and palette
+  if(plot_sr == TRUE){
+    div_breaks <- col_breaks$div_breaks
+    sr_breaks <- col_breaks$sr_breaks
+  } else {
+    div_breaks <- col_breaks
+  }
   if(scale_type == "binned"){
     
     nquants <- length(div_breaks) - 1
@@ -562,6 +568,8 @@ plot_div_raster <- function(div_rast,
       divpal <- viridisLite::viridis(nquants)
     } else if(pal_choice == "turbo"){
       divpal <- viridisLite::turbo(nquants)
+    } else if(palette_choice == "inferno"){
+      divpal <- viridisLite::inferno(nquants)
     } else if(pal_choice == "custom"){
       # create own colour palette (based on Cooney et al (2022) Fig. 2)
       cols <- c("#3e9eb5ff", "#eacc2cff", "#f82202ff")
@@ -582,6 +590,8 @@ plot_div_raster <- function(div_rast,
         srpal <- viridisLite::viridis(nquants_sr)
       } else if(palette_choice == "turbo"){
         srpal <- viridisLite::turbo(nquants_sr)
+      } else if(palette_choice == "inferno"){
+        srpal <- viridisLite::inferno(nquants_sr)
       } else if(palette_choice == "custom"){
         # create own colour palette (based on Cooney et al (2022) Fig. 2)
         cols <- c("#3e9eb5ff", "#eacc2cff", "#f82202ff")

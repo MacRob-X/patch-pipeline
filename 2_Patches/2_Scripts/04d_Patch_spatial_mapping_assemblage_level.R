@@ -29,13 +29,13 @@ source(
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Passeriformes"
+clade <- "Neoaves"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
 space <- "lab"
 # Select number of PC axes to retain ("all" or a number)
-axes <- "6"
+axes <- "all"
 # select whether to use matched sex data (""all" or "matchedsex")
 # "matchedsex" will use diversity metrics calculated on a subset of data containing only species
 # for which we have both a male and female specimen (and excluding specimens of unknown sex)
@@ -45,10 +45,10 @@ sex_interest <- "male_female"
 # select metric ("centr-dist", "nn-k", "nn-count", "sum.variances", "sum.ranges", "convhull.volume")
 metric <- "centr-dist"
 # select type of averaging to use ("mean" or "median")
-avg_par <- "mean"
+avg_par <- "median"
 # select whether to exclude grid cells with species richness below a certain threshold (e.g. 5)
 # set as 0 if no threshold wanted
-sr_threshold <- 10
+sr_threshold <- 15
 # select whether to exclude species with metric value below a certain percentile threshold (default is 75)
 sift_div_data <- FALSE
 # select whther to use liberal, conservative, or nominate IUCN data
@@ -64,7 +64,7 @@ pam_type <- "conservative"
 # clip PAM to land only? ("_clipped" or "")
 pam_seas <- "_clipped"
 # select PAM grid cell resolution
-pam_res <- "100km"
+pam_res <- "50km"
 # enter PAM files location
 pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLife_Shapefiles_GHT/PAMs"
 #pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLife_Shapefiles_v9/PAMs/100km/Behrmann_cea/"
@@ -76,11 +76,11 @@ sift_rast_data <- FALSE
 # Select whether to use binned (based on quantiles) or continuous colour scale
 col_scale_type <- "binned"
 # If binned, choose the number of quantiles to use
-nquants <- 10
+nquants <- 12
 # Also plot species richness map?
 plot_sr <- TRUE
 ## Use viridis_c, viridis turbo palette or custom colour palette?
-palette_choice <- "viridis"
+palette_choice <- "turbo"
 
 ## END EDITABLE CODE ##
 
@@ -153,7 +153,7 @@ div_values <- lapply(
 
 # div_values <- apply(pam, 1, calc_metric_gridcell, pca_data = sexed_metric_list$M, metric = metric, avg_par = avg_par, min_species = sr_threshold)
 # 
-# for(i in 990:1000){(calc_metric_gridcell(pam[i,], pca_data =  sexed_metric_list$M, metric = metric, avg_par = avg_par, min_species = sr_threshold))}
+# for(i in 2000:2010){(calc_metric_gridcell(pam[i,], pca_data =  sexed_metric_list$M, metric = metric, avg_par = avg_par, min_species = sr_threshold))}
 
 # make a list of individual rasters of assemblage-level diversity values
 div_raster <- lapply(div_values, make_assdiv_raster, null_rast = null_rast)
@@ -166,6 +166,11 @@ sr_mask <- make_sr_mask(species_richness, sr_threshold)
 
 # save mask for later use
 sr_mask_filename <- paste("species_richness_mask_threshold", sr_threshold, sub(".rds", "", pam_filename, fixed = TRUE), clade, sex_match, sep = "_")
+space_data_path <-  here::here(
+  "2_Patches", "3_OutputData", "6_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space, "sr_masks")
+if(!dir.exists(space_data_path)){
+  dir.create(space_data_path, recursive = TRUE)
+}
 saveRDS(
   sr_mask, file = here::here(
     "2_Patches", "3_OutputData", "6_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space, "sr_masks",
@@ -237,12 +242,18 @@ colour_breaks <- make_colour_breaks(div_raster_masked, nquants, plot_sr = plot_s
 # set png filename, if saving
 png_filename <- paste(clade, "patches", sex_match, avg_par, metric, "sr_thresh", sr_threshold, col_scale_type, palette_choice, "colscale", "Behrman", pam_seas, "png", sep = ".")
 
+space_plot_path <-  here::here(
+  "2_Patches", "4_OutputPlots", "3_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space, pam_type)
+if(!dir.exists(space_plot_path)){
+  dir.create(space_plot_path, recursive = TRUE)
+}
+
 plot_div_raster(div_raster_masked, 
                 world_spatvec = world, 
                 div_metric = metric,
                 scale_type = col_scale_type, pal_choice = palette_choice,
-                plot_sr = TRUE,
-                div_breaks = colour_breaks$div_breaks, sr_breaks = colour_breaks$sr_breaks,
+                plot_sr = plot_sr,
+                col_breaks = colour_breaks,
                 save_png = TRUE,
                 png_filename = png_filename,
                 assemb_level = TRUE)
@@ -251,7 +262,7 @@ plot_div_raster(div_raster_masked,
 
 # dev
 
-plot(div_raster)
+plot(log(div_raster))
 
 # create df for ggplot of latitudinal gradient
 div_df <- as.data.frame(div_raster, xy = TRUE)
