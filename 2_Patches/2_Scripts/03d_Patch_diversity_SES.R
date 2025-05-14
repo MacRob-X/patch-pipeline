@@ -43,7 +43,7 @@ sex_match <- "matchedsex"
 # be too slow to run)
 metric <- "centr-dist"
 # select type of averaging to use ("mean" or "median")
-avg_par <- "mean"
+avg_par <- "median"
 # select number of null distributions to generate
 n_sims <- 1000
 # select whther to use liberal, conservative, or nominate IUCN data
@@ -435,6 +435,19 @@ png(
     png_filename
   ),
   width = 1500, height = 2000/3, res = 150
+)
+p
+dev.off()
+
+# Save as SVG
+svg_filename <- paste0(clade, "_patch_", space,  "_SES_", "nsims", n_sims, "_", avg_par, "_", metric, "_", iucn_type, "-iucn", ".svg")
+svg(
+  here::here(
+    "2_Patches", "4_OutputPlots", "2_Diversity_measures", "1_Diversity_extinction_risk", 
+    svg_filename
+  ),
+  width = 10, height = 6, pointsize = 14,
+  family = "Century Gothic"
 )
 p
 dev.off()
