@@ -1211,7 +1211,7 @@ library(terra)
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Passeriformes"
+clade <- "Neoaves"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
@@ -1223,10 +1223,9 @@ sex_match <- "matchedsex"
 # select sex of interest ("all", "male_female", "male_only", "female_only", "unknown_only")
 sex_interest <- "male_female"
 
-axes <- paste0("PC", 1:4)
+axes <- paste0("PC", 1:2)
 pixel_type <- "lab"
-pca_space <- pca_all
-const_col_scale <- TRUE
+col_scale_type <- "axis_channel"
 
 # Load data ----
 
@@ -1238,7 +1237,7 @@ pca_all <- readRDS(
     pca_filename
   )
 )[[space]]
-
+pca_space <- pca_all
 
 # Function to generate heatmaps
 # Make a function to plot the PCA loading heatmaps
@@ -1261,7 +1260,7 @@ pca_all <- readRDS(
 #' @export
 #'
 #' @examples
-loading_heatmap <- function(pca_space, axes, pixel_type, sample_raster, write_path = NULL, rgb_colours = FALSE, const_col_scale = TRUE){
+loading_heatmap <- function(pca_space, axes, pixel_type, sample_raster, write_path = NULL, rgb_colours = FALSE, col_scale_type = c("constant", "axis", "axis_channel")){
   
   # define number of channels based on pixel type
   if(pixel_type == "srgb" | pixel_type == "vurgb" | pixel_type == "vrgb" | pixel_type == "urgb" |
@@ -1330,36 +1329,13 @@ loading_heatmap <- function(pca_space, axes, pixel_type, sample_raster, write_pa
   # add xy coordinates (used to transform to raster for easier plotting)
   # first get body part matrix in the correct layout - reference matrix to get xy coords
   bp_mat <- matrix(data = body_parts, nrow = 5, ncol = 2, byrow = TRUE)
+  # reverse row order in matrix (otherwise grid will be plotted upside down)
+  bp_mat <- apply(bp_mat, 2, rev)
   loadings_xy <- loadings %>% 
     mutate(
       x = sapply(body_part, function(val) which(bp_mat == val, arr.ind = TRUE)[2]),
       y = sapply(body_part, function(val) which(bp_mat == val, arr.ind = TRUE)[1])
     )
-  
-  
-  ## Plot individual channels
-  ## For use with any pixel type
-  
-  # create a separate raster for each channel by subsetting
-  # first initialise empty list
-  ch_spatrasters <- vector(mode = "list", length = n_channels)
-  names(ch_spatrasters) <- channel_names
-  for(ch in channel_names){
-    # get data to use to create raster
-    ras_dat <- loadings_xy[loadings_xy$channel == ch, ]
-    # order by body part
-    ras_dat <- ras_dat[order(ras_dat$body_part), ]
-    ras_dat <- ras_dat[, c("x", "y", axes)]
-    # create raster and convert to spatraster
-    ch_raster <- terra::rast(
-      raster::rasterFromXYZ(ras_dat)
-    )
-    # assign to list
-    ch_spatrasters[[ch]] <- ch_raster
-    
-  }
-  
-  # calculate colour scale
   # pivot longer
   loadings_xy_long <- loadings_xy %>% 
     tidyr::pivot_longer(
@@ -1367,166 +1343,201 @@ loading_heatmap <- function(pca_space, axes, pixel_type, sample_raster, write_pa
       names_to = "PC",
       values_to = "loading"
     )
-  if(const_col_scale == TRUE){
-    # use grand min and max for constant colour scale
-    col_lims <- c(min(loadings_xy_long[["loading"]]), max(loadings_xy_long[["loading"]]))
-  } else if(const_col_scale == FALSE){
-    # # use min and max of individual axes for individual colour scales
-    # col_lims <- c(min(loadings_xy_long[loadings_xy_long[["PC"]] == axis, "loading"]), max(loadings_xy_long[loadings_xy_long[["PC"]] == axis, "loading"]))
-  }
   
-  # get limits of x and y coordinates
-  x_min <- min(loadings_xy_long$x) - 0.5
-  x_max <- max(loadings_xy_long$x) + 0.5
-  y_min <- min(loadings_xy_long$y) - 0.5
-  y_max <- max(loadings_xy_long$y) + 0.5
-  
-  # Create plot for each spatraster
-  
-  # first initialise list to store plots
-  ch_plots <- vector(mode = "list", length = n_channels)
-  
-  # add names of list elements
-  names(ch_plots) <- channel_names
-  
-  # calculate aspect ratio
-  asp <- length(unique(loadings_xy_long$y)) / length(unique(loadings_xy_long$x))
-  
-  # loop to create each raster
-  for(ch in channel_names){
+  if(col_scale_type == "constant" | col_scale_type == "axis"){
+    ## Plot individual PCs
+    ## For use with any pixel type
     
-    # create channel plot
-    p <- ggplot() + 
-      tidyterra::geom_spatraster(data = ch_spatrasters[[ch]]) + 
-      xlim(x_min, x_max) + 
-      ylim(y_min, y_max) +
-      # scale_fill_viridis_c(option = "plasma", limits = col_lims) + 
-      facet_grid(rows = vars(lyr)) + 
-      theme(aspect.ratio = asp,
-            axis.text.x=element_blank(),
-            axis.ticks.x=element_blank(),
-            axis.text.y=element_blank(),
-            axis.ticks.y=element_blank(),
-            plot.margin = margin(0, 0, 0, 0))
+    # create a separate raster for each channel by subsetting
+    # first initialise empty list
+    n_axes <- length(axes)
+    pc_spatrasters <- vector(mode = "list", length = n_axes)
+    names(pc_spatrasters) <- axes
+    for(axis in axes){
+      # get data to use to create raster
+      ras_dat <- loadings_xy_long[loadings_xy_long$PC == axis, ]
+      # pivot wider to get channels in different layers
+      ras_dat <- ras_dat %>% 
+        tidyr::pivot_wider(
+          names_from = "channel",
+          values_from = "loading"
+        )
+      # order by body part
+      ras_dat <- ras_dat[order(ras_dat$body_part), ]
+      ras_dat <- ras_dat[, c("x", "y", channel_names)]
+      # create raster and convert to spatraster
+      pc_raster <- terra::rast(
+        raster::rasterFromXYZ(ras_dat)
+      )
+      # assign to list
+      pc_spatrasters[[axis]] <- pc_raster
       
-      
-    
-    
-    
-    # add colour scale
-    if(const_col_scale == TRUE){
-      p <- p + 
-        scale_fill_viridis_c(option = "plasma", limits = col_lims) + 
-        guides(fill = "none") # remove colour legend
-    } else {
-      p <- p + 
-        scale_fill_viridis_c(option = "plasma")
     }
     
-    # add to list
-    ch_plots[[ch]] <- p
+    # calculate colour scale
     
-  }
-  
-  if(const_col_scale == TRUE){
+    if(col_scale_type == "constant"){
+      # use grand min and max for constant colour scale
+      col_lims <- c(min(loadings_xy_long[["loading"]]), max(loadings_xy_long[["loading"]]))
+    } else if(col_scale_type == "axis"){
+      # # use min and max of individual axes for individual colour scales
+      # col_lims <- c(min(loadings_xy_long[loadings_xy_long[["PC"]] == axis, "loading"]), max(loadings_xy_long[loadings_xy_long[["PC"]] == axis, "loading"]))
+    }
     
-    # create plot to extract legend
-    leg_plot <- ggplot() +
-      tidyterra::geom_spatraster(data = ch_spatrasters[[1]]) + 
-      facet_wrap(~lyr) + 
-      scale_fill_viridis_c(option = "plasma", limits = col_lims) +
-      theme(legend.position = "right")
-    # extract legend grob to pass to ggarrange
-    leg_grob <- ggpubr::get_legend(leg_plot)
+    # get limits of x and y coordinates
+    x_min <- min(loadings_xy_long$x) - 0.5
+    x_max <- max(loadings_xy_long$x) + 0.5
+    y_min <- min(loadings_xy_long$y) - 0.5
+    y_max <- max(loadings_xy_long$y) + 0.5
     
-    # combine individual channel plots into one figure
-    loadings_heatmap <- ggpubr::ggarrange(
-      plotlist = ch_plots, 
-      ncol = n_channels, 
-      labels = channel_names, 
-      # label.x = 0.5,
-      # label.y = 0.2,
-      align = "hv",
-      widths = c(1, 1, 1),  # Adjust widths to minimize space
-      heights = c(1, 1, 1),
-      common.legend = TRUE,
-      legend.grob = leg_grob,
-      legend = "right"
-    )
+    # Create plot for each spatraster
     
-  } else if(const_col_scale == FALSE){
+    # first initialise list to store plots
+    pc_plots <- vector(mode = "list", length = n_axes)
     
-    # combine individual channel plots into one figure
-    loadings_heatmap <- ggpubr::ggarrange(
-      plotlist = ch_plots, 
-      ncol = n_channels, 
-      labels = channel_names, 
-      # label.x = 0.5,
-      # label.y = 0.2,
-      align = "hv",
-      widths = c(1, 1, 1),  # Adjust widths to minimize space
-      heights = c(1, 1, 1),
-      common.legend = FALSE,
-      legend = "right"
-    )
+    # add names of list elements
+    names(pc_plots) <- axes
     
-  }
-  
-  
-  ###### END 19/05/2025 - 
-  ###### Seems to be working quite well up to here but is plotting landscape
-  ###### Need to find a way to check if the correct value is being mapped on to the
-  ###### correct square
-  #--------------------------------#
-  
-  
-  # pivot longer
-  loadings_xy_long <- loadings_xy %>% 
-    tidyr::pivot_longer(
-      cols = tidyr::starts_with("PC"),
-      names_to = "PC",
-      values_to = "loading"
-    )
-  
-  library(terra)
-  
-  # Create a template raster
-  template_rast <- terra::rast(bp_mat)
-  
-  # create rasters
-  rasters <- lapply(
-    axes, function(axis){
+    # calculate aspect ratio
+    asp <- length(unique(loadings_xy_long$y)) / length(unique(loadings_xy_long$x))
+    
+    # loop to create each raster
+    for(axis in axes){
       
-      lapply(
-        channel_names, function(ch){
-          
-          # create raster
-          rast <- loadings_xy_long %>% 
-            filter(PC == axis, channel == ch) %>% 
-            select(x, y) %>% 
-            as.matrix() %>% 
-            terra::rasterize(
-              y = template_rast,
-              values = rep(NA, times = nrow(.))
-            )
-          # assign values
-          terra::values(rast) <- loadings_xy_long$loading[which(loadings_xy_long$PC == axis & loadings_xy_long$channel == ch)]
-          
-          return(rast)
-          
-        }
+      # create axis plot
+      p <- ggplot() + 
+        tidyterra::geom_spatraster(data = pc_spatrasters[[axis]]) + 
+        xlim(x_min, x_max) + 
+        ylim(y_min, y_max) +
+        # scale_fill_viridis_c(option = "plasma", limits = col_lims) + 
+        facet_grid(cols = vars(lyr)) + 
+        theme(aspect.ratio = asp,
+              axis.text.x=element_blank(),
+              axis.ticks.x=element_blank(),
+              axis.text.y=element_blank(),
+              axis.ticks.y=element_blank(),
+              plot.margin = margin(0, 0, 0, 0))
+        
+        
+      
+      
+      
+      # add colour scale
+      if(col_scale_type == "constant"){
+        p <- p + 
+          scale_fill_viridis_c(option = "plasma", limits = col_lims) + 
+          guides(fill = "none") # remove colour legend
+      } else {
+        p <- p + 
+          scale_fill_viridis_c(option = "plasma")
+      }
+      
+      # add to list
+      pc_plots[[axis]] <- p
+      
+    }
+    
+    if(col_scale_type == "constant"){
+      
+      # create plot to extract legend
+      leg_plot <- ggplot() +
+        tidyterra::geom_spatraster(data = pc_spatrasters[[1]]) + 
+        facet_wrap(~lyr) + 
+        scale_fill_viridis_c(option = "plasma", limits = col_lims) +
+        theme(legend.position = "right")
+      # extract legend grob to pass to ggarrange
+      leg_grob <- ggpubr::get_legend(leg_plot)
+      
+      # combine individual channel plots into one figure
+      loadings_heatmap <- ggpubr::ggarrange(
+        plotlist = pc_plots, 
+        nrow = n_axes,
+        # ncol = n_channels, 
+        labels = axes, 
+        # label.x = 0.5,
+        # label.y = 0.2,
+        align = "hv",
+        widths = c(1, 1, 1),  # Adjust widths to minimize space
+        heights = c(1, 1, 1),
+        common.legend = TRUE,
+        legend.grob = leg_grob,
+        legend = "right"
+      )
+      
+    } else if(col_scale_type == "axis"){
+      
+      # combine individual channel plots into one figure
+      loadings_heatmap <- ggpubr::ggarrange(
+        plotlist = pc_plots, 
+        nrow = n_axes,
+        # ncol = n_channels, 
+        labels = axes, 
+        # label.x = 0.5,
+        # label.y = 0.2,
+        align = "hv",
+        widths = c(1, 1, 1),  # Adjust widths to minimize space
+        heights = c(1, 1, 1),
+        common.legend = FALSE,
+        legend = "right"
       )
       
     }
-  )
+    
+    return(loadings_heatmap)
+  }
   
-  # combine into a single raster
-  rasters <- unlist(rasters, recursive = FALSE)
-  heatmap_raster <- terra::rast(rasters)
-  
-  # plot
-  terra::plot(heatmap_raster, nc = length(channel_names), nr = length(axes), legend = TRUE)
-  
+  # For an individual legend for each channel of each axis
+  if(col_scale_type == "axis_channel"){
+    
+    # Create a template raster
+    template_rast <- terra::rast(bp_mat)
+    
+    # create rasters
+    rasters <- lapply(
+      axes, function(axis){
+        
+        lapply(
+          channel_names, function(ch){
+            
+            dat_for_rast <- loadings_xy_long %>% 
+              filter(PC == axis, channel == ch) %>% 
+              arrange(body_part)
+            
+            # get values for raster
+            vals <- dat_for_rast %>% 
+              pull(loading) 
+            
+            # create raster
+            rast <- dat_for_rast %>% 
+              select(x, y) %>% 
+              as.matrix() %>% 
+              terra::rasterize(
+                y = template_rast,
+                values = rep(NA, times = nrow(.))
+              )
+            # assign values
+            terra::values(rast) <- vals
+            
+            return(rast)
+            
+          }
+        )
+        
+      }
+    )
+    
+    # combine into a single raster
+    rasters <- unlist(rasters, recursive = FALSE)
+    heatmap_raster <- terra::rast(rasters)
+    
+    # plot
+    p <- terra::plot(heatmap_raster, nc = length(channel_names), nr = length(axes), legend = TRUE, col = map.pal("plasma", 100))
+    
+    return(p)
+    
+  }
+
+
   
   
   
