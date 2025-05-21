@@ -1208,6 +1208,7 @@ rm(list=ls())
 library(dplyr)
 library(ggplot2)
 library(terra)
+library(tidyterra)
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
@@ -1251,16 +1252,15 @@ pca_space <- pca_all
 #' @param pca_space A prcomp object containing the PCA colour pattern space
 #' @param axes PC axes to plot heatmaps for
 #' @param pixel_type What do the pixel values represent? One of "srgb", "vurgb", "vrgb", "urgb", "tcsxyz", "lab", "rawusml", "jndxyzlum", "jndxyzlumr", "tcsxyzlum", "tcsxyzlumr", "rawusmldbl", "rawusmldblr"
-#' @param sample_raster A sample raster from which to extract xy co-ordinates of the pixels
 #' @param write_path Path and filename to write plot to, if saving as a PNG
 #' @param rgb_colours Should the plot be plotted in pseudo-RGB colouring? Only possible for pixrl_type == "srgb"
-#' @param const_col_scale Should the plot use a unified colour scale for all PC axes, or should each axis have its own colour scale? Currently only const_col_scale == TRUE is implemented for any pixel type other than "srgb", "vrgb", "urgb", "vurgb".
+#' @param col_scale_type Should the plot use a unified colour scale for all PC axes, or should each axis have its own colour scale? Individual colour scales for each channel of each axis are also supported
 #'
 #' @return If write_path == NULL, returns a ggplot object of the heatmaps
 #' @export
 #'
 #' @examples
-loading_heatmap <- function(pca_space, axes, pixel_type, sample_raster, write_path = NULL, rgb_colours = FALSE, col_scale_type = c("constant", "axis", "axis_channel")){
+patch_loading_heatmap <- function(pca_space, axes, pixel_type, write_path = NULL, rgb_colours = FALSE, col_scale_type = c("constant", "axis", "axis_channel")){
   
   # define number of channels based on pixel type
   if(pixel_type == "srgb" | pixel_type == "vurgb" | pixel_type == "vrgb" | pixel_type == "urgb" |
@@ -1531,455 +1531,102 @@ loading_heatmap <- function(pca_space, axes, pixel_type, sample_raster, write_pa
     heatmap_raster <- terra::rast(rasters)
     
     # plot
-    p <- terra::plot(heatmap_raster, nc = length(channel_names), nr = length(axes), legend = TRUE, col = map.pal("plasma", 100))
+    # p <- ggplot() + 
+    #   tidyterra::geom_spatraster(data = heatmap_raster) + 
+    #   facet_wrap(~lyr, ncol = n_channels) + 
+    #   scale_fill_viridis_c(option = "plasma") + 
+    #   theme_minimal()
+     p <- terra::plot(heatmap_raster, nc = length(channel_names), nr = length(axes), legend = TRUE, col = map.pal("plasma", 100))
     
     return(p)
     
   }
 
-
-  
-  
-  
-  rasters <- loadings_xy_long %>% 
-    filter(PC == "PC1", channel == "L") %>% 
-    select(x, y) %>% 
-    as.matrix() %>% 
-    terra::rasterize(
-      y = template_rast,
-      values = loadings_xy_long$loading[which(loadings_xy_long$PC == "PC1" & loadings_xy_long$channel == "L")]
-    )
-  
-  
-  # pivot longer (i.e. add single column for PC axis number)
-  loadings_long <- loadings %>% 
-    tidyr::pivot_longer(
-      cols = tidyr::starts_with("PC"),
-      names_to = "PC",
-      values_to = "loading"
-    )
-  
-  # Create a function to map loading values to colors
-  colour_map <- function(loading_value, limits) {
-    # Scale the value between 0 and 1
-    scaled_value <- (loading_value - limits[1]) / (limits[2] - limits[1])
-    # Return the corresponding color from the plasma palette
-    return(viridis::viridis(100, option = "plasma")[ceiling(scaled_value * 99) + 1])
-  }
-  
-  names(axes) <- axes
-  names(channel_names) <- channel_names
-  
-  # create plot for each channel of each axis
-  grobs <- lapply(axes, function(axis){
-    
-    # set up colour scale
-    if(const_col_scale == TRUE){
-      # use grand min and max for constant colour scale
-      col_lims <- c(min(loadings_long[["loading"]]), max(loadings_long[["loading"]]))
-    } else if(const_col_scale == FALSE){
-      # use min and max of individual axes for individual colour scales
-      col_lims <- c(min(loadings_long[loadings_long[["PC"]] == axis, "loading"]), max(loadings_long[loadings_long[["PC"]] == axis, "loading"]))
-    }
-    
-    col_scale <- viridisLite::plasma(n = 256)
-    
-    lapply(channel_names, function(ch){
-      
-      # subset loadings to axis/channel of interest
-      axch_lo <- loadings_long %>% 
-        filter(
-          channel == ch,
-          PC == axis
-        )
-      
-      # Set up the plotting area
-      # grid::grid.newpage()
-      # grid::pushViewport(grid::viewport(layout = grid::grid.layout(5, 2)))
-      
-      # Plot each color in a 5x2 grid without white space
-      # first switch the names and elements of body_parts around, for indexing
-      patch_nums <- setNames(as.numeric(names(body_parts)), body_parts)
-      rect_grobs <- list()
-      for (i in patch_nums) {
-        
-        # set up plotting params
-        row <- ((i - 1) %/% 2) + 1
-        col <- ((i - 1) %% 2) + 1
-        
-        # get loading for this body part
-        loading_value <- as.numeric(axch_lo[body_parts == names(patch_nums[i]), "loading"])
-        
-        # Map loading value to color
-        rect_color <- colour_map(loading_value, col_lims)
-        
-        rect_grobs[[i]] <- grid::rectGrob(x = (col - 1) / 2, y = (5 - row) / 5,
-                        width = 0.5, height = 0.2,
-                        just = c("left", "bottom"),
-                        gp = grid::gpar(fill = rect_color,
-                                        col = NA))
-      }
-      # combine rectangle into a single grob
-      axch_grob <- grid::gTree(
-        children = do.call(grid::gList, rect_grobs),
-        name = paste(axis, ch, sep = "_")
-      )
-      
-      return(axch_grob)
-      
-    })
-      
-  })
-  
-  # plot the grids using gridExtra
-  
-  # extract grobs into one list
-  grobs_unified <- unlist(grobs, recursive = FALSE)
-  
-  # plot
-  gridExtra::grid.arrange(
-    grobs = grobs_unified,
-    nrow = length(axes),
-    ncol = length(channel_names),
-    padding = grid::unit(1, "cm")
-  )
-  
-  # Now actually plot the grids
-  # Create a new, empty page
-  grid::grid.newpage()
-  # Create a layout with n_rows as the number of axes and n__cols as the number of channels
-  n_rows <- length(axes)
-  n_cols <- length(channel_names)
-  n_grids <- n_rows * n_cols
-  grid::pushViewport(grid::viewport(layout = grid::grid.layout(n_rows, n_cols)))
-  
-  n_grids <- length(axes)
-  for(row_index in 1:n_rows){
-    
-    
-    for(col_index in 1:n_cols){
-      print(paste0("axis = ", axes[[row_index]], ", channel = ", channel_names[[col_index]], ", grid position = (", row_index, ", ", col_index, ")"))
-      # Create a viewport for this position
-      grid::pushViewport(grid::viewport(layout.pos.row = row_index, layout.pos.col = col_index))
-      
-      # Draw the grob
-      grid::grid.draw(grobs[[axes[row_index]]][[channel_names[col_index]]])
-      
-      # Exit this viewport
-      grid::popViewport()
-    }
-    
-  }
-  
-  # END OF COLOUR GRID BIT #
-  
-  
-  # get mapping of pixel coordinates to pixel values from sample raster
-  
-  # aggregate
-  agg.fact <- 1
-  sample_raster <- suppressWarnings(aggregate(sample_raster, fact=agg.fact))
-  # convert raster to dataframe with xy coordinates
-  dat <- as.data.frame(sample_raster, xy=T)
-  # subset to complete cases
-  dat <- dat[complete.cases(dat),]
-  # add pixel number as column
-  dat$pixel_number <- as.numeric(rownames(dat))
-  
-  # create copies of each coordinate pair (one for each input channel)
-  coords <- dat[, c("x", "y", "pixel_number")]
-  for(i in 2:n_channels){
-    coords <- rbind(coords, dat[, c("x", "y", "pixel_number")])
-  }
-  
-  # order according to pixel number
-  coords <- coords[order(coords$pixel_number), ]
-  
-  
-  # create df of channel type
-  channels <- data.frame(
-    channel = rep(
-      channel_names, length.out = (nrow(dat) * n_channels)
-    )
-  )
-  
-  # join xy coordinates to loadings and add channel specification
-  loading_coords <- cbind(coords, channels, loadings)
-  
-  if(rgb_colours == FALSE){
-    
-    ## Plot individual channels ----
-    ## For use with any pixel type
-    
-    # create a separate raster for each channel by subsetting
-    # first initialise empty list
-    ch_spatrasters <- vector(mode = "list", length = n_channels)
-    names(ch_spatrasters) <- channel_names
-    for(ch in channel_names){
-      # get data to use to create raster
-      ras_dat <- loading_coords[loading_coords$channel == ch, ]
-      # order by row/'pixel' number
-      ras_dat <- ras_dat[order(ras_dat$pixel_number), ]
-      ras_dat <- ras_dat[, c("x", "y", axes)]
-      # create raster and convert to spatraster
-      ch_raster <- terra::rast(
-        rasterFromXYZ(ras_dat)
-      )
-      # assign to list
-      ch_spatrasters[[ch]] <- ch_raster
-      
-    }
-    
-    # calculate aspect ratio
-    asp <- length(unique(loading_coords$y)) / length(unique(loading_coords$x))
-    
-    # calculate colour scale
-    if(const_col_scale == TRUE){
-      # calculate grand max and min of loadings to set the same colour scale for each raster
-      col_lims <- c(min(loadings), max(loadings))
-    }
-    
-    # get limits of x and y coordinates
-    x_min <- min(loading_coords$x) - 0.5
-    x_max <- max(loading_coords$x) + 0.5
-    y_min <- min(loading_coords$y) - 0.5
-    y_max <- max(loading_coords$y) + 0.5
-    
-    # Create plot for each spatraster
-    
-    # first initialise list to store plots
-    ch_plots <- vector(mode = "list", length = n_channels)
-    
-    # add names of list elements
-    names(ch_plots) <- channel_names
-    
-    # loop to create each raster
-    for(ch in channel_names){
-      
-      # create channel plot
-      p <- ggplot() + 
-        tidyterra::geom_spatraster(data = ch_spatrasters[[ch]]) + 
-        xlim(x_min, x_max) + 
-        ylim(y_min, y_max) +
-        # scale_fill_viridis_c(option = "plasma", limits = col_lims) + 
-        facet_grid(rows = vars(lyr)) + 
-        theme(aspect.ratio = asp,
-              axis.text.x=element_blank(),
-              axis.ticks.x=element_blank(),
-              axis.text.y=element_blank(),
-              axis.ticks.y=element_blank(),
-              plot.margin = margin(0, 0, 0, 0)) + 
-        guides(fill = "none") # remove colour legend
-      
-      # add colour scale
-      if(const_col_scale == TRUE){
-        p <- p + 
-          scale_fill_viridis_c(option = "plasma", limits = col_lims)
-      } else {
-        p <- p + 
-          scale_fill_viridis_c(option = "plasma")
-      }
-      
-      # add to list
-      ch_plots[[ch]] <- p
-      
-    }
-    
-    # create plot to extract legend
-    leg_plot <- ggplot() +
-      tidyterra::geom_spatraster(data = ch_spatrasters[[1]]) + 
-      facet_wrap(~lyr) + 
-      scale_fill_viridis_c(option = "plasma", limits = col_lims) +
-      theme(legend.position = "right")
-    # extract legend grob to pass to ggarrange
-    leg_grob <- ggpubr::get_legend(leg_plot)
-    
-    # combine individual channel plots into one figure
-    loadings_heatmap <- ggpubr::ggarrange(
-      plotlist = ch_plots, 
-      ncol = n_channels, 
-      labels = channel_names, 
-      # label.x = 0.5,
-      # label.y = 0.2,
-      align = "hv",
-      widths = c(1, 1, 1),  # Adjust widths to minimize space
-      heights = c(1, 1, 1),
-      common.legend = TRUE,
-      legend.grob = leg_grob,
-      legend = "right"
-    )
-    
-    # write to file, if specified
-    if(!is.null(write_path)){
-      
-      # set png width and height
-      plot_width = 500*n_channels
-      plot_height = 150*length(axes)
-      
-      # initialise saving
-      png(write_path, width = plot_width, height = plot_height, res = 150)
-      
-      print(loadings_heatmap)
-      
-      dev.off()
-    } else{
-      return(loadings_heatmap)
-    }
-  } else if(rgb_colours == TRUE){
-    
-    # check that the pixel type is RGB
-    if(!identical(channel_names, c("R", "G", "B"))) {
-      stop("Pixel type must be RGB of some kind if rgb_colours == TRUE is selected")
-    }
-    
-    # create function to normalise loading values in each axis/channel combination between the minimum and 1
-    normalise <- function(x, max = NULL){
-      if(is.null(max)){
-        x / max(x)
-      } else {
-        if(max(x) > max){
-          x / max(x)
-        } else{
-          x / max
-        }
-      }
-    }
-    # alternative normalisation function - normalises between 0 and 1, which means the lowest 
-    # loading gets reset to 0 (could be confusing)
-    # # normalise <- function(x, max = NULL){
-    #   if(is.null(max)){
-    #     (x - min(x)) / (max(x) - min(x))
-    #   } else {
-    #     if(max(x) > max){
-    #       (x - min(x)) / (max(x) - min(x))
-    #     } else{
-    #       (x - min(x)) / (max - min(x))
-    #     }
-    #   }
-    # }
-    
-    
-    # initialise df to store data to plot in
-    plot_dat <- data.frame(x = numeric(), y = numeric(), dir = character(), hex = character(), axis = character())
-    
-    # initialise for loop to run over each PC axis
-    for(axis in axes){
-      
-      # select the PC of interest
-      img_dat <- loading_coords[, c("x", "y", "channel", axis)] 
-      colnames(img_dat) <- c(colnames(img_dat)[1:3], "pc_values")
-      
-      # add column for positive loadings only (set negative loadings to 0)
-      img_dat$pos_pc_values <- img_dat$pc_values
-      img_dat$pos_pc_values[img_dat$pc_values < 0] <- 0
-      # add column for negative loadings only (set positive loadings to 0)
-      img_dat$neg_pc_values <- img_dat$pc_values
-      img_dat$neg_pc_values[img_dat$pc_values > 0] <- 0
-      # make negative loadings positive (to allow for normalisation and conversion to RGB)
-      img_dat$neg_pc_values <- -(img_dat$neg_pc_values)
-      
-      # normalise loadings between 0 and 1 (can either do this using the grand min/max across all PCs
-      # of interest or just using the PC of interest. Using grand min will produce a plot with the same 
-      # colour scale across all PCs, using PC-specific min/max will produce plot with colour scales specific to 
-      # each PC axis)
-      if(const_col_scale == TRUE){
-        img_dat <- img_dat %>% 
-          mutate(
-            pos_pc_values = normalise(
-              pos_pc_values, 
-              max = max(loading_coords[, axes], -(min(loading_coords[, axes])))
-            ),
-            neg_pc_values = normalise(
-              neg_pc_values, 
-              max = max(loading_coords[, axes], -(min(loading_coords[, axes])))
-            )
-          ) 
-      } else if(const_col_scale == FALSE){
-        img_dat <- img_dat %>% 
-          mutate(
-            pos_pc_values = normalise(
-              pos_pc_values,
-              max = max(loading_coords[, axis], -(min(loading_coords[, axis])))
-            ),
-            neg_pc_values = normalise(
-              neg_pc_values,
-              max = max(loading_coords[, axis], -(min(loading_coords[, axis])))
-            )
-          )
-      }
-      
-      # select only positive loadings, pivot wider to get separate columns for each channel and save as new df
-      pos_img_dat <- img_dat %>% 
-        dplyr::select(
-          x, y, channel, pos_pc_values
-        ) %>% 
-        tidyr::pivot_wider(
-          names_from = channel, values_from = pos_pc_values
-        )
-      # and the same for negative loadings
-      neg_img_dat <- img_dat %>% 
-        dplyr::select(
-          x, y, channel, neg_pc_values
-        ) %>% 
-        tidyr::pivot_wider(
-          names_from = channel, values_from = neg_pc_values
-        )
-      
-      # convert rgb values to hex and add to new df for plotting. Pivot longer to allow faceting in plot
-      plot_axis_dat <- pos_img_dat %>% 
-        dplyr::select(
-          x, y
-        ) %>% 
-        mutate(
-          pos = rgb(pos_img_dat$R, pos_img_dat$G, pos_img_dat$B),
-          neg = rgb(neg_img_dat$R, neg_img_dat$G, neg_img_dat$B)
-        ) %>% 
-        tidyr::pivot_longer(
-          cols = c(pos, neg),
-          names_to = "dir", 
-          values_to = "hex"
-        ) %>% 
-        mutate(
-          axis = axis
-        )
-      
-      # append to dataframe for plotting
-      plot_dat <- rbind(plot_dat, plot_axis_dat)
-      
-    }
-    
-    # convert axis to factor (so the axes are plotted in the right order)
-    plot_dat$axis <- factor(plot_dat$axis, levels = axes)
-    
-    # calculate aspect ratio
-    asp <- length(unique(img_dat$y)) / length(unique(img_dat$x))
-    
-    
-    # Create the ggplot with points colored by the RGB values, faceted by axis and positive/negative loadings
-    loadings_heatmap <- ggplot(plot_dat, aes(x = x, y = y)) +
-      geom_point(aes(colour = hex), size = 1) +  # Adjust size as needed
-      facet_grid(cols = vars(dir), rows = vars(axis)) + # facet by positive/negative
-      scale_color_identity() +  # Use the colors as is
-      theme_void() +   # Remove all axes, gridlines, etc.
-      theme(aspect.ratio = asp, # Keep aspect ratio square if x and y are on the same scale
-            plot.background = element_rect(fill = 'white'),
-            str)
-    
-    if(!is.null(write_path)){
-      
-      # set png width and height
-      plot_width = 1000
-      plot_height = 137*length(axes)
-      
-      # save
-      png(write_path, width = plot_width, height = plot_height, res = 240)
-      print(loadings_heatmap)
-      dev.off()
-    } else {
-      return(loadings_heatmap)
-    }
-    
-  }
-  
 }
 
+patch_loading_heatmap(pca_all, axes, pixel_type, col_scale_type = "constant")
+
+
+# 21/05/2025 ----
+# Plot centroid distance on UMAP
+
+
+# clear environment
+rm(list=ls())
+
+# Load libraries ----
+library(dplyr)
+library(ggplot2)
+
+## EDITABLE CODE ##
+# Select subset of species ("Neoaves" or "Passeriformes")
+clade <- "Neoaves"
+# select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
+# N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
+# (from 240603 to 240806)
+space <- "lab"
+# select whether to use matched sex data (""all" or "matchedsex")
+# "matchedsex" will use diversity metrics calculated on a subset of data containing only species
+# for which we have both a male and female specimen (and excluding specimens of unknown sex)
+sex_match <- "matchedsex"
+# select sex of interest ("all", "male_female", "male_only", "female_only", "unknown_only")
+sex_interest <- "male_female"
+
+# Load data ----
+
+# Load PCA data
+pca_filename <- paste(clade, sex_match, "patches.231030.PCAcolspaces", "rds", sep = ".")
+pca_all <- readRDS(
+  here::here(
+    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
+    pca_filename
+  )
+)[[space]][["x"]]
+
+# Load UMAP
+umap_filename <- paste(clade, sex_match, "patches", space, "pca.canonUMAP", "rds", sep = ".")
+umap_all <- readRDS(
+  here::here(
+    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
+    umap_filename
+  )
+)[["layout"]]
+
+# Get centroid distances
+centr_dists <- dispRity::dispRity(pca_all, dispRity::centroids)[["disparity"]][[1]][["elements"]]
+rownames(centr_dists) <- rownames(pca_all)
+
+# add spp/sex column (to join to UMAP data)
+centr_dists <- centr_dists %>% 
+  as.data.frame() %>% 
+  mutate(spp_sex = rownames(.)) %>% 
+  rename(centr_dist = V1)
+umap_all <- umap_all %>% 
+  as.data.frame() %>% 
+  mutate(spp_sex = rownames(.)) %>% 
+  rename(
+    UMAP1 = V1,
+    UMAP2 = V2
+  )
+
+# join by spp/sex
+plot_data <- umap_all %>% 
+  inner_join(
+    centr_dists,
+    by = "spp_sex"
+  )
+
+# plot, with point colour as distance to centroid
+plot_data %>% 
+  ggplot(aes(x = UMAP1, y = UMAP2, colour = centr_dist)) + 
+  geom_point() + 
+  scale_colour_viridis_c()
+
+plotly::plot_ly(
+  data = plot_data,
+  x = ~UMAP1, y = ~UMAP2,
+  color = ~log(centr_dist),
+  type = "scatter",
+  text = ~spp_sex,
+  colors = viridisLite::turbo(100)
+)
