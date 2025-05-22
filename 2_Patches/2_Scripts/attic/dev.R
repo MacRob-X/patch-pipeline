@@ -1118,7 +1118,7 @@ p
 dev.off()
 
 
-# Find out which pheontypes are being lost ----
+# Find out which phenotypes are being lost ----
 
 # Load UMAP
 umap <- readRDS(
@@ -1168,6 +1168,147 @@ saveRDS(dat %>%
             !(iucn_cat %in% c("LC", "DD") )
           ),
         "Neoaves_threatened_only.rds")
+
+# filter to only non-threatened species
+lc_umap <- dat %>% 
+  filter(
+    iucn_cat %in% c("LC", "NT")
+  )
+
+# filter to original, but with DD species removed
+orig_umap <- dat %>% 
+  filter(
+    iucn_cat != "DD"
+  )
+
+
+
+# let's try creating a heatmap of the proportional loss in a gridded colourspace
+# get UMAP1 and UMAP2 limits (padded by 0.1)
+orig_limits <- list(
+  UMAP1 = c(min(orig_umap$UMAP1) - 0.1, max(orig_umap$UMAP1) + 0.1),
+  UMAP2 = c(min(orig_umap$UMAP2) - 0.1, max(orig_umap$UMAP2) + 0.1)
+)
+# define N bins for each axis
+n_bins <- 25
+bins <- list(
+  UMAP1 = seq(from = orig_limits$UMAP1[[1]], to = orig_limits$UMAP1[[2]], length.out = n_bins+1),
+  UMAP2 = seq(from = orig_limits$UMAP2[[1]], to = orig_limits$UMAP2[[2]], length.out = n_bins+1)
+)
+# get bin length
+bin_lengths <- c(UMAP1 = bins$UMAP1[[2]] - bins$UMAP1[[1]], UMAP2 = bins$UMAP2[[2]] - bins$UMAP2[[1]])
+
+
+# initialise a matrix to store results in
+bin_counts_orig <- matrix(
+  nrow = n_bins,
+  ncol = n_bins
+)
+# count number of species in each bin in original umap
+# UMAP1
+for(umap1_bin_start in bins$UMAP1){
+  
+  # get bin indices
+  umap1_bin_start_index <- which(bins$UMAP1 == umap1_bin_start)
+  umap1_bin_end_index <- which(bins$UMAP1 == umap1_bin_start) + 1
+  
+  
+  # skip iteration if final bin start index
+  if(umap1_bin_start_index == n_bins+1){
+    break
+  }
+  
+  # define bin end
+  umap1_bin_end <- bins$UMAP1[umap1_bin_end_index]
+  
+  # loop across UMAP2 bins
+  for(umap2_bin_start in bins$UMAP2){
+    
+    # get bin indices
+    umap2_bin_start_index <- which(bins$UMAP2 == umap2_bin_start)
+    umap2_bin_end_index <- which(bins$UMAP2 == umap2_bin_start) + 1
+    
+    # skip iteration if final bin start index
+    if(umap2_bin_start_index == n_bins+1){
+      break
+    }
+    
+    # get UMAP2 bin end
+    umap2_bin_end <- bins$UMAP2[umap2_bin_end_index]
+    
+    # get species/sex within bin
+    species_pres <- orig_umap[umap1_bin_start < orig_umap$UMAP1 & orig_umap$UMAP1 < umap1_bin_end & umap2_bin_start < orig_umap$UMAP2 & orig_umap$UMAP2 < umap2_bin_end, c("species", "sex")]
+    
+    # count number of species in bin
+    species_count <- nrow(species_pres)
+    
+    # add species count to matrix
+    bin_counts_orig[umap2_bin_start_index, umap1_bin_start_index] <- species_count
+    
+
+  }
+  
+}
+bin_counts_lc <- matrix(
+  nrow = n_bins,
+  ncol = n_bins
+)
+# count number of species in each bin in lcinal umap
+# UMAP1
+for(umap1_bin_start in bins$UMAP1){
+  
+  # get bin indices
+  umap1_bin_start_index <- which(bins$UMAP1 == umap1_bin_start)
+  umap1_bin_end_index <- which(bins$UMAP1 == umap1_bin_start) + 1
+  
+  
+  # skip iteration if final bin start index
+  if(umap1_bin_start_index == n_bins+1){
+    break
+  }
+  
+  # define bin end
+  umap1_bin_end <- bins$UMAP1[umap1_bin_end_index]
+  
+  # loop across UMAP2 bins
+  for(umap2_bin_start in bins$UMAP2){
+    
+    # get bin indices
+    umap2_bin_start_index <- which(bins$UMAP2 == umap2_bin_start)
+    umap2_bin_end_index <- which(bins$UMAP2 == umap2_bin_start) + 1
+    
+    # skip iteration if final bin start index
+    if(umap2_bin_start_index == n_bins+1){
+      break
+    }
+    
+    # get UMAP2 bin end
+    umap2_bin_end <- bins$UMAP2[umap2_bin_end_index]
+    
+    # get species/sex within bin
+    species_pres <- lc_umap[umap1_bin_start < lc_umap$UMAP1 & lc_umap$UMAP1 < umap1_bin_end & umap2_bin_start < lc_umap$UMAP2 & lc_umap$UMAP2 < umap2_bin_end, c("species", "sex")]
+    
+    # count number of species in bin
+    species_count <- nrow(species_pres)
+    
+    # add species count to matrix
+    bin_counts_lc[umap2_bin_start_index, umap1_bin_start_index] <- species_count
+    
+    
+  }
+  
+}
+
+# Now get proportional reduction matrix
+bin_counts_prop <- 1 - (bin_counts_lc / bin_counts_orig)
+# check if any cells have value 0 - if not, we can use this to replace NaN
+which(bin_counts_prop == 0)
+# there are some - let's set NaN as NA instead and use a heatmap function that can handle it
+bin_counts_prop[is.nan(bin_counts_prop)] <- NA
+
+heatmap(bin_counts_prop, Rowv = NA, Colv = NA, col = viridisLite::plasma(256), )
+
+
 
 # Load PCA to check which species are threatened and colourful
 pca <- readRDS(
