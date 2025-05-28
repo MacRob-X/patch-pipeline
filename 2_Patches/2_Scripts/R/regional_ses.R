@@ -264,6 +264,7 @@ calc_region_ses <- function(region_sf, pca_data, pam, null_raster, iucn, metric,
                 region_species = species_pres, 
                 iucn_data = iucn, 
                 metric = metric,
+                centroid = centroid,
                 n_sims = n_sims,
                 avg_par = avg_par,
                 cluster = cl)
