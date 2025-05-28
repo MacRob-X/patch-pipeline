@@ -33,7 +33,7 @@ clade <- "Neoaves"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
-space <- "lab"
+space <- "ab"
 # Select number of PC axes to retain ("all" or a number)
 axes <- "all"
 # select whether to use matched sex data (""all" or "matchedsex")
@@ -48,7 +48,7 @@ metric <- "centr-dist"
 avg_par <- "median"
 # select whether to exclude grid cells with species richness below a certain threshold (e.g. 5)
 # set as 0 if no threshold wanted
-sr_threshold <- 15
+sr_threshold <- 5
 # select whether to exclude species with metric value below a certain percentile threshold (default is 75)
 sift_div_data <- FALSE
 # select whther to use liberal, conservative, or nominate IUCN data
@@ -80,7 +80,7 @@ nquants <- 12
 # Also plot species richness map?
 plot_sr <- TRUE
 ## Use viridis_c, viridis turbo palette or custom colour palette?
-palette_choice <- "turbo"
+palette_choice <- "viridis"
 
 ## END EDITABLE CODE ##
 
@@ -260,13 +260,13 @@ plot_div_raster(div_raster_masked,
 
 
 
-# dev
+# dev ----
 
 plot(log(div_raster))
 
 # create df for ggplot of latitudinal gradient
-div_df <- as.data.frame(div_raster, xy = TRUE)
-div_df <- tidyr::pivot_longer(div_df, cols = c("M", "F"), names_to = "Layer", values_to = "Centroid_distance")
+div_df <- terra::as.data.frame(div_raster[[(c("M", "F"))]], xy = TRUE, wide = FALSE)
+# div_df <- tidyr::pivot_longer(div_df, cols = c("M", "F"), names_to = "Layer", values_to = "Centroid_distance")
 colnames(div_df) <- c("longitude", "latitude", "sex", "centroid_distance")
 
 # plot latitudinal gradient - all values
@@ -276,7 +276,7 @@ div_df %>%
   facet_wrap(~ sex) + 
   theme_minimal()
 
-# plot latitudinal gradient - means
+# plot latitudinal gradient - medians
 div_df %>% 
   group_by(latitude, sex) %>% 
   summarise(median_value = median(centroid_distance, na.rm = TRUE), .groups = "drop") %>% 
@@ -285,3 +285,31 @@ div_df %>%
   geom_point() + 
   facet_wrap(~ sex, scales = "free_x") + 
   theme_minimal()
+
+# ridgeline plots - multiple histograms (one for each latitude value)
+library(ggridges)
+
+# first bin into latitude bins as too many to do full latitude plot
+div_df_binned <- div_df %>%
+  mutate(lat_bin = round(latitude / 300) * 300)  # Bin to nearest 300 units
+
+# plot ridgeline plot
+p_binned <- ggplot(div_df_binned, aes(x = centroid_distance, y = factor(lat_bin), fill = sex)) +
+  geom_density_ridges(alpha = 0.7, scale = 2, rel_min_height = 0.01) +
+  facet_wrap(~ sex, ncol = 2) +
+  labs(
+    title = paste0("Distribution of Centroid Distance (", space, ") by Latitude (Binned)"),
+    subtitle = "Ridgeline plot with latitude binned to nearest 300 units",
+    x = "Centroid Distance",
+    y = "Latitude (Binned)",
+    fill = "Sex"
+  ) +
+  theme_ridges() +
+  theme(
+    strip.text = element_text(size = 12, face = "bold"),
+    axis.text.y = element_text(size = 8),
+    legend.position = "none"
+  )
+
+# Display the binned version
+print(p_binned)
