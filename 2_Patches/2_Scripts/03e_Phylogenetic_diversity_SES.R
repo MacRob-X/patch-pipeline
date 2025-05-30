@@ -136,22 +136,71 @@ raw_out <- data.frame(all_species = rep(NA, n_trees), noCR = NA, noEN = NA, noVU
 ab_weights <- rep(1, length(trimmed_species_lists$all_species))
 names(ab_weights) <- trimmed_species_lists$all_species
 
-# calculate SES PD and PD
-start_time <- Sys.time()
+# calculate SES PD (parallelised version)
+no_cores <- min(parallel::detectCores() - 2, n_trees)
+cl <- parallel::makeCluster(no_cores)
+# export necessary objects to the cluster
+parallel::clusterExport(cl, c("n_trees", "trees", "trimmed_species_lists", "tips"))
+
+pdi_list <- parallel::parLapply(cl = cl, 1:n_trees, function(tree_number) {
+  
+  # trim tree to match full species list
+  tree <- ape::drop.tip(trees[[tree_number]], tip = trees[[tree_number]]$tip.label[!trees[[tree_number]]$tip_label %in% trimmed_species_lists$all_species])
+  
+  # calculate SES (Phylogenetic Diversity Index)
+  # Note that I'm not 100% certain that calculating PDI is equivalent to calculating PD SES - this is
+  # based on a throwaway line in https://www.rdocumentation.org/packages/PhyloMeasures/versions/2.1/topics/pd.query
+  # https://search.r-project.org/CRAN/refmans/adiv/html/evodiv.html states that if you set method = "richness", this
+  # calculates Faith's Phylogenetic Diversity Index
+  pdi <- adiv::evodiv(tree, comm = tips, method = "richness")
+  # Original method - doesn't work as PhyloMeasures doesn't seem to be compatible with current R version
+  # ses_out[, tree_number] <- PhyloMeasures::pd.query(
+  #   tree = tree, 
+  #   matrix = t(tips), 
+  #   null.model = "sequential",
+  #   abundance.weights = ab_weights,
+  #   reps = n_sims,
+  #   standardize = TRUE
+  #   )
+  return(pdi)
+  
+})
+
+parallel::stopCluster(cl)
+
+ses_out[1:n_trees, 1: length(iucn_levels)] <- t(do.call(cbind, pdi_list))
+
+
+# now the same for raw PD
+
+
+
+
+
 for(tree_number in 1:n_trees){
   
   # trim tree to match full species list
   tree <- ape::drop.tip(trees[[tree_number]], tip = trees[[tree_number]]$tip.label[!trees[[tree_number]]$tip_label %in% trimmed_species_lists$all_species])
   
-  # calculate SES PD
-  ses_out[, tree_number] <- PhyloMeasures::pd.query(
-    tree = tree, 
-    matrix = t(tips), 
-    null.model = "sequential",
-    abundance.weights = ab_weights,
-    reps = n_sims,
-    standardize = TRUE
-    )
+  # calculate SES (Phylogenetic Diversity Index)
+  # Note that I'm not 100% certain that calculating PDI is equivalent to calculating PD SES - this is
+  # based on a throwaway line in https://www.rdocumentation.org/packages/PhyloMeasures/versions/2.1/topics/pd.query
+  # https://search.r-project.org/CRAN/refmans/adiv/html/evodiv.html states that if you set method = "richness", this
+  # calculates Faith's Phylogenetic Diversity Index
+  ses_out[tree_number, ] <- adiv::evodiv(tree, comm = tips, method = "richness")
+  # ses_out[, tree_number] <- PhyloMeasures::pd.query(
+  #   tree = tree, 
+  #   matrix = t(tips), 
+  #   null.model = "sequential",
+  #   abundance.weights = ab_weights,
+  #   reps = n_sims,
+  #   standardize = TRUE
+  #   )
+  
+  # calculate raw PD
+  #pd <- raw_out[, tree_number] <- caper::pd.calc(cm = tree)
+  
+  
   cat("/rCompleted tree ", tree_number, " of ", n_trees)
   
 }
