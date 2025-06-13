@@ -86,3 +86,49 @@ male_species %>%
     female_species
   ) %>% 
   nrow()
+
+# check how percentage coverage of species and genera
+n_neoaves_jetz <- taxo %>% 
+  filter(
+    IOCOrder != "STRUTHIONIFORMES", 
+    IOCOrder != "RHEIFORMES", 
+    IOCOrder != "CASUARIIFORMES", 
+    IOCOrder != "APTERYGIFORMES", 
+    IOCOrder != "TINAMIFORMES", 
+    IOCOrder != "GALLIFORMES", 
+    IOCOrder != "ANSERIFORMES"
+  ) %>% 
+  magrittr::extract2("TipLabel") %>% 
+  unique() %>% 
+  length()
+
+n_neoaves_matchedsex <- male_species %>% 
+  inner_join(
+    female_species
+  ) %>% 
+  nrow()
+
+# percentage species coverage
+(n_neoaves_matchedsex / n_neoaves_jetz) * 100
+
+# check percentage of genera with >= 1 representative in patch data
+n_neoaves_genera_jetz <- taxo %>% 
+  filter(
+    IOCOrder != "STRUTHIONIFORMES", 
+    IOCOrder != "RHEIFORMES", 
+    IOCOrder != "CASUARIIFORMES", 
+    IOCOrder != "APTERYGIFORMES", 
+    IOCOrder != "TINAMIFORMES", 
+    IOCOrder != "GALLIFORMES", 
+    IOCOrder != "ANSERIFORMES"
+  ) %>% 
+  magrittr::extract2("GenusName") %>% 
+  unique() %>% 
+  length()
+
+n_neoaves_genera_matchedsex <- px %>% 
+  magrittr::extract2("GenusName") %>% 
+  unique() %>% 
+  length()
+
+(n_neoaves_genera_matchedsex / n_neoaves_genera_jetz) * 100
