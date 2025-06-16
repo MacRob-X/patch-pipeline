@@ -1365,7 +1365,7 @@ sex_match <- "matchedsex"
 # select sex of interest ("all", "male_female", "male_only", "female_only", "unknown_only")
 sex_interest <- "male_female"
 
-axes <- paste0("PC", 1:2)
+axes <- paste0("PC", 1:8)
 pixel_type <- "lab"
 col_scale_type <- "axis_channel"
 
@@ -1396,12 +1396,22 @@ pca_space <- pca_all
 #' @param write_path Path and filename to write plot to, if saving as a PNG
 #' @param rgb_colours Should the plot be plotted in pseudo-RGB colouring? Only possible for pixrl_type == "srgb"
 #' @param col_scale_type Should the plot use a unified colour scale for all PC axes, or should each axis have its own colour scale? Individual colour scales for each channel of each axis are also supported
+#' @param stack_channels If TRUE, take absolute of each patch loadings and stack channels to give absolute measure of patch important (not compatible with col_scale_type = "axis_channel")
 #'
 #' @return If write_path == NULL, returns a ggplot object of the heatmaps
 #' @export
 #'
 #' @examples
-patch_loading_heatmap <- function(pca_space, axes, pixel_type, write_path = NULL, rgb_colours = FALSE, col_scale_type = c("constant", "axis", "axis_channel")){
+patch_loading_heatmap <- function(pca_space, axes, pixel_type, write_path = NULL, rgb_colours = FALSE, col_scale_type = c("constant", "axis", "axis_channel"), stack_channels = FALSE){
+  
+  # check col_scale_type and stack_channels parameters are compatible
+  if(col_scale_type == "axis_channel" & stack_channels == TRUE){
+    
+    col_scale_type <- "axis"
+    
+    warning("'axis_channel' colour scale type not compatible with stacked channel heatmap. Setting col_scale_type = 'axis'")
+    
+  }
   
   # define number of channels based on pixel type
   if(pixel_type == "srgb" | pixel_type == "vurgb" | pixel_type == "vrgb" | pixel_type == "urgb" |
@@ -1485,9 +1495,210 @@ patch_loading_heatmap <- function(pca_space, axes, pixel_type, write_path = NULL
       values_to = "loading"
     )
   
-  if(col_scale_type == "constant" | col_scale_type == "axis"){
-    ## Plot individual PCs
-    ## For use with any pixel type
+  # for non-stacked (individual channel) plot
+  if(stack_channels == FALSE){
+    
+    if(col_scale_type == "constant" | col_scale_type == "axis"){
+      ## Plot individual PCs
+      ## For use with any pixel type
+      
+      # create a separate raster for each channel by subsetting
+      # first initialise empty list
+      n_axes <- length(axes)
+      pc_spatrasters <- vector(mode = "list", length = n_axes)
+      names(pc_spatrasters) <- axes
+      for(axis in axes){
+        # get data to use to create raster
+        ras_dat <- loadings_xy_long[loadings_xy_long$PC == axis, ]
+        # pivot wider to get channels in different layers
+        ras_dat <- ras_dat %>% 
+          tidyr::pivot_wider(
+            names_from = "channel",
+            values_from = "loading"
+          )
+        # order by body part
+        ras_dat <- ras_dat[order(ras_dat$body_part), ]
+        ras_dat <- ras_dat[, c("x", "y", channel_names)]
+        # create raster and convert to spatraster
+        pc_raster <- terra::rast(
+          raster::rasterFromXYZ(ras_dat)
+        )
+        # assign to list
+        pc_spatrasters[[axis]] <- pc_raster
+        
+      }
+      
+      # calculate colour scale
+      
+      if(col_scale_type == "constant"){
+        # use grand min and max for constant colour scale
+        col_lims <- c(min(loadings_xy_long[["loading"]]), max(loadings_xy_long[["loading"]]))
+      } else if(col_scale_type == "axis"){
+        # # use min and max of individual axes for individual colour scales
+        # col_lims <- c(min(loadings_xy_long[loadings_xy_long[["PC"]] == axis, "loading"]), max(loadings_xy_long[loadings_xy_long[["PC"]] == axis, "loading"]))
+      }
+      
+      # get limits of x and y coordinates
+      x_min <- min(loadings_xy_long$x) - 0.5
+      x_max <- max(loadings_xy_long$x) + 0.5
+      y_min <- min(loadings_xy_long$y) - 0.5
+      y_max <- max(loadings_xy_long$y) + 0.5
+      
+      # Create plot for each spatraster
+      
+      # first initialise list to store plots
+      pc_plots <- vector(mode = "list", length = n_axes)
+      
+      # add names of list elements
+      names(pc_plots) <- axes
+      
+      # calculate aspect ratio
+      asp <- length(unique(loadings_xy_long$y)) / length(unique(loadings_xy_long$x))
+      
+      # loop to create each raster
+      for(axis in axes){
+        
+        # create axis plot
+        p <- ggplot() + 
+          tidyterra::geom_spatraster(data = pc_spatrasters[[axis]]) + 
+          xlim(x_min, x_max) + 
+          ylim(y_min, y_max) +
+          # scale_fill_viridis_c(option = "plasma", limits = col_lims) + 
+          facet_grid(cols = vars(lyr)) + 
+          theme(aspect.ratio = asp,
+                axis.text.x=element_blank(),
+                axis.ticks.x=element_blank(),
+                axis.text.y=element_blank(),
+                axis.ticks.y=element_blank(),
+                plot.margin = margin(0, 0, 0, 0))
+        
+        
+        
+        
+        
+        # add colour scale
+        if(col_scale_type == "constant"){
+          p <- p + 
+            scale_fill_viridis_c(option = "plasma", limits = col_lims) + 
+            guides(fill = "none") # remove colour legend
+        } else {
+          p <- p + 
+            scale_fill_viridis_c(option = "plasma")
+        }
+        
+        # add to list
+        pc_plots[[axis]] <- p
+        
+      }
+      
+      if(col_scale_type == "constant"){
+        
+        # create plot to extract legend
+        leg_plot <- ggplot() +
+          tidyterra::geom_spatraster(data = pc_spatrasters[[1]]) + 
+          facet_wrap(~lyr) + 
+          scale_fill_viridis_c(option = "plasma", limits = col_lims) +
+          theme(legend.position = "right")
+        # extract legend grob to pass to ggarrange
+        leg_grob <- ggpubr::get_legend(leg_plot)
+        
+        # combine individual channel plots into one figure
+        loadings_heatmap <- ggpubr::ggarrange(
+          plotlist = pc_plots, 
+          nrow = n_axes,
+          # ncol = n_channels, 
+          labels = axes, 
+          # label.x = 0.5,
+          # label.y = 0.2,
+          align = "hv",
+          widths = c(1, 1, 1),  # Adjust widths to minimize space
+          heights = c(1, 1, 1),
+          common.legend = TRUE,
+          legend.grob = leg_grob,
+          legend = "right"
+        )
+        
+      } else if(col_scale_type == "axis"){
+        
+        # combine individual channel plots into one figure
+        loadings_heatmap <- ggpubr::ggarrange(
+          plotlist = pc_plots, 
+          nrow = n_axes,
+          # ncol = n_channels, 
+          labels = axes, 
+          # label.x = 0.5,
+          # label.y = 0.2,
+          align = "hv",
+          widths = c(1, 1, 1),  # Adjust widths to minimize space
+          heights = c(1, 1, 1),
+          common.legend = FALSE,
+          legend = "right"
+        )
+        
+      }
+      
+      return(loadings_heatmap)
+    }
+    
+    # For an individual legend for each channel of each axis
+    if(col_scale_type == "axis_channel"){
+      
+      # Create a template raster
+      template_rast <- terra::rast(bp_mat)
+      
+      # create rasters
+      rasters <- lapply(
+        axes, function(axis){
+          
+          lapply(
+            channel_names, function(ch){
+              
+              dat_for_rast <- loadings_xy_long %>% 
+                filter(PC == axis, channel == ch) %>% 
+                arrange(body_part)
+              
+              # get values for raster
+              vals <- dat_for_rast %>% 
+                pull(loading) 
+              
+              # create raster
+              rast <- dat_for_rast %>% 
+                select(x, y) %>% 
+                as.matrix() %>% 
+                terra::rasterize(
+                  y = template_rast,
+                  values = rep(NA, times = nrow(.))
+                )
+              # assign values
+              terra::values(rast) <- vals
+              
+              return(rast)
+              
+            }
+          )
+          
+        }
+      )
+      
+      # combine into a single raster
+      rasters <- unlist(rasters, recursive = FALSE)
+      heatmap_raster <- terra::rast(rasters)
+      
+      # plot
+      # p <- ggplot() + 
+      #   tidyterra::geom_spatraster(data = heatmap_raster) + 
+      #   facet_wrap(~lyr, ncol = n_channels) + 
+      #   scale_fill_viridis_c(option = "plasma") + 
+      #   theme_minimal()
+      p <- terra::plot(heatmap_raster, nc = length(channel_names), nr = length(axes), legend = TRUE, col = map.pal("plasma", 100))
+      
+      return(p)
+      
+    }
+    
+  } else if(stack_channels == TRUE){
+    
+    # for summation of absolute patch loadings across channels
     
     # create a separate raster for each channel by subsetting
     # first initialise empty list
@@ -1503,9 +1714,17 @@ patch_loading_heatmap <- function(pca_space, axes, pixel_type, write_path = NULL
           names_from = "channel",
           values_from = "loading"
         )
+      # take the absolute and sum the individual absolute channel loadings
+    ras_dat <- ras_dat %>% 
+        mutate(
+          absolute_loading = rowSums(abs(select(., all_of(unname(channel_names)))))
+          ) %>% 
+      select(
+        - all_of(unname(channel_names))
+      )
       # order by body part
       ras_dat <- ras_dat[order(ras_dat$body_part), ]
-      ras_dat <- ras_dat[, c("x", "y", channel_names)]
+      ras_dat <- ras_dat[, c("x", "y", "absolute_loading")]
       # create raster and convert to spatraster
       pc_raster <- terra::rast(
         raster::rasterFromXYZ(ras_dat)
@@ -1518,11 +1737,12 @@ patch_loading_heatmap <- function(pca_space, axes, pixel_type, write_path = NULL
     # calculate colour scale
     
     if(col_scale_type == "constant"){
+      all_vals <- lapply(pc_spatrasters, terra::values) %>% unlist()
       # use grand min and max for constant colour scale
-      col_lims <- c(min(loadings_xy_long[["loading"]]), max(loadings_xy_long[["loading"]]))
-    } else if(col_scale_type == "axis"){
-      # # use min and max of individual axes for individual colour scales
-      # col_lims <- c(min(loadings_xy_long[loadings_xy_long[["PC"]] == axis, "loading"]), max(loadings_xy_long[loadings_xy_long[["PC"]] == axis, "loading"]))
+      col_lims <- c(
+        min(all_vals),
+        max(all_vals)
+      )
     }
     
     # get limits of x and y coordinates
@@ -1558,8 +1778,8 @@ patch_loading_heatmap <- function(pca_space, axes, pixel_type, write_path = NULL
               axis.text.y=element_blank(),
               axis.ticks.y=element_blank(),
               plot.margin = margin(0, 0, 0, 0))
-        
-        
+      
+      
       
       
       
@@ -1625,68 +1845,16 @@ patch_loading_heatmap <- function(pca_space, axes, pixel_type, write_path = NULL
     }
     
     return(loadings_heatmap)
+    
   }
   
-  # For an individual legend for each channel of each axis
-  if(col_scale_type == "axis_channel"){
-    
-    # Create a template raster
-    template_rast <- terra::rast(bp_mat)
-    
-    # create rasters
-    rasters <- lapply(
-      axes, function(axis){
-        
-        lapply(
-          channel_names, function(ch){
-            
-            dat_for_rast <- loadings_xy_long %>% 
-              filter(PC == axis, channel == ch) %>% 
-              arrange(body_part)
-            
-            # get values for raster
-            vals <- dat_for_rast %>% 
-              pull(loading) 
-            
-            # create raster
-            rast <- dat_for_rast %>% 
-              select(x, y) %>% 
-              as.matrix() %>% 
-              terra::rasterize(
-                y = template_rast,
-                values = rep(NA, times = nrow(.))
-              )
-            # assign values
-            terra::values(rast) <- vals
-            
-            return(rast)
-            
-          }
-        )
-        
-      }
-    )
-    
-    # combine into a single raster
-    rasters <- unlist(rasters, recursive = FALSE)
-    heatmap_raster <- terra::rast(rasters)
-    
-    # plot
-    # p <- ggplot() + 
-    #   tidyterra::geom_spatraster(data = heatmap_raster) + 
-    #   facet_wrap(~lyr, ncol = n_channels) + 
-    #   scale_fill_viridis_c(option = "plasma") + 
-    #   theme_minimal()
-     p <- terra::plot(heatmap_raster, nc = length(channel_names), nr = length(axes), legend = TRUE, col = map.pal("plasma", 100))
-    
-    return(p)
-    
-  }
+  
 
 }
 
-patch_loading_heatmap(pca_all, axes, pixel_type, col_scale_type = "constant")
+patch_loading_heatmap(pca_all, axes, pixel_type, col_scale_type = "axis")
 
+patch_loading_heatmap(pca_all, axes, pixel_type, col_scale_type = "constant", stack_channels = TRUE)
 
 # 21/05/2025 ----
 # Plot centroid distance on UMAP
@@ -1771,3 +1939,121 @@ plotly::plot_ly(
   text = ~spp_sex,
   colors = viridisLite::turbo(100)
 )
+
+
+# 04/06/2025 ----
+
+# Meta-visualisation of colour space
+# Ma et al. 2023 Nat. Comm.
+# https://doi.org/10.1038/s41467-023-36492-2
+# https://github.com/rongstat/meta-visualization/tree/main
+# https://rongstat.github.io/metaviz_guide.io/user_guide.html
+
+# clear environment
+rm(list=ls())
+
+# Load libraries
+library(dplyr)
+library(ggplot2)
+
+# Load shared functions ----
+source(
+  here::here(
+    "2_Patches", "2_Scripts", "R", "meta_visualisation.R"
+  )
+)
+
+## EDITABLE CODE ## ----
+# Select subset of species ("Neoaves" or "Passeriformes")
+clade <- "Passeriformes"
+# select whether to use matched sex data (""all" or "matchedsex")
+# "matchedsex" will use diversity metrics calculated on a subset of data containing only species
+# for which we have both a male and female specimen (and excluding specimens of unknown sex)
+sex_match <- "matchedsex"
+# select sex of interest ("all", "male_female", "male_only", "female_only", "unknown_only")
+sex_interest <- "male_female"
+# choose colour space to use
+space <- "lab"
+
+# Load in PCA colourspace
+pca_space <- readRDS(
+  here::here(
+    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
+    paste(clade, sex_match,  "patches.231030.PCAcolspaces.rds", sep = ".")
+  )
+) %>% 
+  magrittr::extract2(space) %>% 
+  magrittr::extract2("x")
+
+# test on a small subset first - 1000 species
+all_species <- unique(sapply(strsplit(rownames(pca_space), split = "-"), "[", 1))
+random_species <- sample(all_species, size = 1000, replace = FALSE)
+random_sexed_species <- c(
+  paste0(random_species, "-M"),
+  paste0(random_species, "-F")
+)
+random_subset <- pca_space[which(rownames(pca_space) %in% random_sexed_species), ]
+info <- rownames(random_subset)
+
+# get candidate visualisations
+candidate.out <- candidate.visual(pca_space, methods = c("MDS", "iMDS", "Sammon", "LLE", "HLLE","Isomap",
+                                                         "kPCA", "LEIM", "UMAP", "tSNE"),
+                                  umap.k = c(15, 20)
+                                  )
+
+# plot all visualisations
+for(k in 1:length(candidate.out$method_name)){
+  data.plot = data.frame(dim1=candidate.out$embed.list[[k]][,1], dim2=candidate.out$embed.list[[k]][,2])
+  p <- ggplot(data.plot, aes(x=dim1, y=dim2)) + geom_point(size=1.5) +
+    scale_shape_manual(values=1:nlevels(data.plot$cluster)) + ggtitle(candidate.out$method[k])
+  print(p)
+}
+
+# get meta visualisation
+ensemble.out <- ensemble.viz(candidate.out$embed.list, candidate.out$method_name)
+
+# assess candidate visualisations - boxplots of eigenscores
+n <- dim(pca_space)[1]
+data.plot = data.frame(eigen.score = c(ensemble.out$eigenscore), method = rep(candidate.out$method_name, each=n))
+ggplot(data.plot, aes(x=reorder(method, eigen.score, FUN=median), y=eigen.score)) +
+  geom_boxplot(outlier.size = 0.5) + theme(axis.text.x = element_text(angle = 40, vjust = 1, hjust=1)) +
+  ylab("eigenscore") + xlab("method")
+
+# visualise eigenscores
+for(k in 1:length(candidate.out$method_name)){
+  data.plot = data.frame(dim1=candidate.out[[1]][[k]][,1], dim2=candidate.out[[1]][[k]][,2], 
+                         eigenscore = c(ensemble.out[[2]][,k]))
+  p <- ggplot(data.plot, aes(x=dim1, y=dim2)) + geom_point(size=1.5, aes(color=eigenscore)) +
+    ggtitle(candidate.out$method[k])
+  print(p)
+}
+
+# apply UMAP to meta-distance matrix to obtain final meta-visualisation
+ensemble.data=umap(as.dist(ensemble.out$ensemble.dist.mat),  n_neighbors = 50)
+
+data.plot = data.frame(dim1=ensemble.data[,1], dim2=ensemble.data[,2])
+ggplot(data.plot, aes(x=dim1, y=dim2)) + geom_point(size=1.5) +
+  scale_shape_manual(values=1:nlevels(data.plot$cluster))+ ggtitle("meta-spec")
+
+rownames(data.plot) <- info
+
+# save to plot with colour grids
+saveRDS(data.plot, file = "meta_visualisation.rds")
+
+plot_space <- data.plot
+x_axis <- "dim1"
+y_axis <- "dim2"
+xlabel <- "dim1"
+ylabel <- "dim2"
+
+# plot coloured by distance to centroid
+centr_dists <- dispRity::dispRity(pca_space, metric = dispRity::centroids)$disparity[[1]][[1]]
+rownames(centr_dists) <- rownames(pca_space)
+
+plot_space <- merge(plot_space, centr_dists, by=0)
+
+plot_space %>% 
+  ggplot(aes(x = dim1, y = dim2, colour = log(centr_dists))) + 
+  geom_point() + 
+  scale_colour_viridis_c()
+# actually doesn't represent this very well
