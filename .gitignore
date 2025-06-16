@@ -58,3 +58,6 @@ vignettes/*.pdf
 
 # Shared input data folder
 /4_SharedInputData
+
+# Junk folder (temporary dev files)
+/junk
