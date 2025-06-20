@@ -733,3 +733,134 @@ plot_div_raster <- function(div_rast,
   
 }
 
+# Functions for calculating diversity by bioregion ----
+
+
+# get df of chosen metric for each species - for calculating diversity vs global centroid (only works for centroid distance)
+metric_vals <- function(pca_data, metric){
+  
+  # set metric
+  metric_get <- set_metric(metric)
+  
+  # calculate metric
+  metric_values <- dispRity::dispRity(pca_data, metric = metric_get)$disparity[[1]][[1]]
+  
+  # add rownames
+  rownames(metric_values) <- rownames(pca_data)
+  
+  return(metric_values)
+  
+}
+
+
+# function to calculate average value of metric for males and females for each ecoregion
+# returns [1, 2] matrix that can be inputted to ecoregion data
+calc_regions_global_metric <- function(region_index, region_shapes, region_type, metric, div_loss_type,  metric_vals = NULL, pca_data = NULL, null_terrast, avg_par){
+  
+  # check if combination of parameters is possible
+  if(div_loss_type == "global" & metric != "centr-dist"){
+    stop(paste("Combination of", div_loss_type, "div_loss_type and", metric, "metric is not possible.
+               Please choose new parameters and try again."))
+  }
+  
+  # extract the region
+  ecoreg <- region_shapes[region_index, ]
+  
+  # for debugging purposes (only works if regions == "ecoregions)
+  # ecoreg_num <- ecoreg$OBJECTID
+  # ecoreg_name <- ecoreg$ECO_NAME
+  
+  # get number of cells in null raster
+  ncells <- length(terra::values(null_terrast))
+  
+  # create null rast, subsetted to extent of ecoregion
+  # first assign values to null_rast to keep track of grid cells
+  null_terrast_sub <- null_terrast
+  terra::values(null_terrast_sub) <- 1:ncells
+  null_terrast_sub <- null_terrast_sub %>% 
+    terra::crop(ecoreg) %>% 
+    terra::mask(ecoreg)
+  
+  # use values of subsetted raster to subset PAM to ROI
+  pam_sub <- pam[terra::values(null_terrast_sub), ]
+  
+  # check if 1 or fewer grid cells
+  if(length(terra::values(null_terrast_sub)) < 2){
+    # get species which are present in subsetted PAM
+    species_pres <- names(which(!is.na(pam_sub)))
+  } else {
+    # get species which are present in subsetted PAM
+    species_pres <- names(which(apply(pam_sub, 2, function(x) any(!(is.na(x))))))
+  }
+  
+  # check if there are as many or more species in ROI than the threshold SR
+  if(length(species_pres) >= sr_threshold){
+    
+    # if there are enough species, get average distance to centroids of 
+    # present species for males and females
+    
+    # if using global centroid vals
+    if(div_loss_type == "global" & metric == "centr-dist"){
+      
+      # if metric values have already been supplied then just take the average
+      if(!is.null(metric_vals)){
+        avg_metric <- avg(metric_vals[species_pres, ], avg_type = avg_par, na.rm = TRUE)
+      } else
+        # if values not supplied, calculate values relative to global centroid
+        if(is.null(metric_vals) & !is.null(pca_data)){
+          
+          # subset PCA data
+          region_data <- pca_data[species_pres, ]
+          
+          # calculate metric values relative to global centroid
+          region_metric_vals <- dispRity::dispRity(region_data, metric = set_metric(metric), centroid = rep(0, ncol(region_data)))$disparity[[1]][[1]]
+          
+          # get average metric value for region
+          avg_metric <- avg(region_metric_vals, avg_type = avg_par, na.rm = TRUE)
+        }
+      
+    } else 
+      # if using local centroid vals (or other metric)
+      if(div_loss_type == "local"){
+        
+        # subset PCA data
+        region_data <- pca_data[species_pres, ]
+        
+        # calculate metric values relative to global centroid
+        region_metric_vals <- dispRity::dispRity(region_data, metric = set_metric(metric))$disparity[[1]][[1]]
+        
+        # get average metric value for region
+        avg_metric <- avg(region_metric_vals, avg_type = avg_par, na.rm = TRUE)
+        
+      }
+    
+    
+  } else {
+    
+    # if there are fewer species than threshold, set values = NA
+    avg_metric <- NA
+    
+  }
+  
+  # set species richness value
+  sr <- length(species_pres)
+  
+  avgs <- c(avg_metric, sr)
+  
+  if(regions == "ecoregions"){
+    ## SET VALUES FOR ECOREGION OBJECTID 207 - "Rock and Ice" - BIOM_NUM 11 - to 
+    ## NA - it seems, from looking at Dinerstein et al (2017) and their interactive map
+    ## https://ecoregions.appspot.com/ that this should be possibly excluded as it's
+    ## basically uninhabited - it has an artificially extremely high species richness
+    ## because it spans all of Antarctica, Greenland, parts of the Himalaya, Iceland, 
+    ## and Northwestern North America
+    if(ecoreg$OBJECTID == 207){
+      avgs <- rep(NA, times = 2)
+    }
+  }
+  
+  
+  return(avgs)
+  
+}
+

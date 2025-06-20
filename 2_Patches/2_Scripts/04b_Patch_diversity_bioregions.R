@@ -13,6 +13,19 @@ library(dplyr)
 library(tidyterra)
 library(dispRity)
 
+# Load shared functions ----
+source(
+  here::here(
+    "2_Patches", "2_Scripts", "R", "mapping.R"
+  )
+)
+
+source(
+  here::here(
+    "3_SharedScripts", "dispRity_metric_functions.R"
+  )
+)
+
 ## EDITABLE CODE ## ----
 # Select subset of species ("Neoaves" or "Passeriformes")
 clade <- "Passeriformes"
@@ -24,12 +37,16 @@ space <- "lab"
 # "matchedsex" will subset to only species for which we have at least one
 # male and female specimen
 sex_match <- "matchedsex"
+# select sex of interest ("all", "male_female", "male_only", "female_only", "unknown_only")
+sex_interest <- "male_female"
 # select metric ("centr-dist", "nn-k", "nn-count")
 # note that nn-k is EXTREMELY slow to run - needs parallelisation (but will probably still
 # be too slow to run)
 metric <- "centr-dist"
 # select averaging type ("mean", "median", "mode")
-avg <- "mean"
+avg_par <- "median"
+# select whether to calculate local or global diversity loss (i.e., mean distance to local or global centroid)
+div_loss_type <- "local"
 # select whether to exclude grid cells with species richness below a certain threshold (e.g. 5)
 # set as 0 if no threshold wanted
 sr_threshold <- 5
@@ -52,27 +69,23 @@ pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLi
 #pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLife_Shapefiles_v9/PAMs/100km/Behrmann_cea/"
 # use ecoregions or biomes?
 regions <- "ecoregions"
+# parallelise working (parallelisation doesn't currently work so set to FALSE)
+parallelise <- FALSE
 ## END EDITABLE CODE ##
 
 # set dispRity metric
-if(metric == "centr-dist"){
-  metric_get <- "centroids"
-} else if (metric == "nn-k"){
-  metric_get <- "mean.nn.dist"
-}else if (metric == "nn-count"){
-  metric_get <- "count.neighbours"
-}
+metric_get <- set_metric(metric)
 
 ## Load data ----
 
 # load patch data (PCA of whichever colourspace - generated in 02_Patch_Analyse_features.R)
-pca_filename <- paste(clade, "patches.231030.PCAcolspaces", "rds", sep = ".")
-pca_all <- readRDS(
+pca_filename <- paste(clade, sex_match, "patches.231030.PCAcolspaces", "rds", sep = ".")
+pca_dat <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
     pca_filename
   )
-)[[space]]
+)[[space]][["x"]]
 
 # load PAM
 pam_filename <- paste0("PAM_birds_Behrman", pam_res, "_Pres12_Orig12_Seas12_", pam_type, pam_seas, ".rds")
@@ -82,279 +95,135 @@ pam_raw <- readRDS(
   paste(pams_filepath, pam_filename, sep = "/")
 )
 
-# load Dinerstein et al 2017 ecoregion or biome shape files
-if(regions == "ecoregions"){
-  ecoregions <- sf::st_read(
-    here::here(
-      "4_SharedInputData", "Ecoregions2017_accessed2024-10-07",
-      "Ecoregions2017.shp"
-    )
-  )
-} else if(regions == "biomes"){
-  
-  # check if biomes file is already present
-  if(file.exists(here::here(
-        "4_SharedInputData", "Ecoregions2017_accessed2024-10-07",
-        "Biomes2017.shp"
-      ))){
-    
-    # load file if present
-    ecoregions <- sf::st_read(
-        here::here(
-          "4_SharedInputData", "Ecoregions2017_accessed2024-10-07",
-          "Biomes2017.shp"
-        )
-      )
-    
-  } else{
-    
-    # create biomes file from ecoregions and save    
-    print("No biomes shapefile present - creating from ecoregions file")
-    
-    # load ecoregions
-    ecoregions <- sf::st_read(
-      here::here(
-        "4_SharedInputData", "Ecoregions2017_accessed2024-10-07",
-        "Ecoregions2017.shp"
-      )
-    )
-    
-    # make geometries valid so we can combine them
-    ecoregions <- ecoregions %>% 
-      mutate(
-        geometry = sf::st_make_valid(geometry)
-      )
-    # group by biome and then combine geometries within each biome
-    # note that this takes about 15 minutes to run
-    ecoregions <- ecoregions %>% 
-      group_by(BIOME_NUM, BIOME_NAME) %>% 
-      summarise(
-        geometry = sf::st_union(geometry),
-      ) %>% 
-      ungroup()
-    
-    # save as shapefile
-    ecoregions %>% 
-      sf::st_write(
-        here::here(
-          "4_SharedInputData", "Ecoregions2017_accessed2024-10-07",
-          "Biomes2017.shp"
-        )
-      )
-      
-    }
-  
-}
+# load region data (either Dinerstein et al 2017 ecoregion data or biome data derived from same)
+region_shapes <- load_regions(regions)
 
 
 
 ## Analysis ----
 
 # Set spatial parameters
-null_rast <- pam_raw[[2]]
-pam_allspec <- pam_raw[[1]]
-colnames(pam_allspec) <- gsub(" ", "_", colnames(pam_allspec))
-crs <- as.character(raster::crs(null_rast)) # Behrmann cylindrical equal area projection (standard parallels at 30 deg)
+# extract null raster from PAM file
+null_rast <- extract_null_rast(pam_raw)
+
+# extract matrix values from PAM file
+pam <- extract_pam_vals(pam_raw)
+
+# remove raw PAM file (for RAM reasons)
+rm(pam_raw)
+# change "Genus species" style to "Genus_species" style in PAM colnames
+colnames(pam) <- gsub(" ", "_", colnames(pam))
 
 # convert ecoregions to Behrman CEA CRS
-ecoregions <- sf::st_transform(ecoregions, crs = terra::crs(null_rast, proj = TRUE))
+region_shapes <- sf::st_transform(region_shapes, crs = terra::crs(null_rast, proj = TRUE))
 
 
-# Extract PCA co-ordinates data and add species and sex columns
-pca_dat <- pca_all$x %>% 
-  as.data.frame() %>% 
-  mutate(
-    species = sapply(strsplit(rownames(.), split = "-"), "[", 1),
-    sex = sapply(strsplit(rownames(.), split = "-"), "[", 2)
-  )# %>% 
-# filter(
-#   sex == sex
-# )
+# get list of species included in diversity/PCA data
+spp_list <- get_unique_spp(pca_dat)
 
-# if specified, clip to only species for which we have at least one male and female specimen
-if(sex_match == "matchedsex"){
-  
-  # get list of species to keep
-  species_list <- pca_dat[, c("species", "sex")]
-  species_m <- species_list[species_list$sex == "M", "species"]
-  species_f <- species_list[species_list$sex == "F", "species"]
-  spec_to_keep <- intersect(species_m, species_f)
-  
-  # subset data to these species
-  pca_dat <- pca_dat[pca_dat$species %in% spec_to_keep, ]
-  
-  # remove variables
-  rm(species_list, species_m, species_f, spec_to_keep)
-  
-  # set list of sexes (for looping later)
-  sexes <- c("M", "F")
-  
-} else if(sex_match == "allspecimens"){
-  sexes <- c("M", "F", "U")
-}
+# subset pam to only species in diversity data
+pam <- subset_pam(pam, spp_list)
 
-# subset pam so it includes only species in patch data
-spec_list <- unique(pca_dat$species)
-spec_keep <- colnames(pam_allspec)[colnames(pam_allspec) %in% spec_list]
-pam <- pam_allspec[, spec_keep]
+# subset diversity pca_dat to only species present in PAM
+pca_dat <- subset_data_by_spp(pca_dat, colnames(pam))
 
-# remove raw PAMs for RAM reasons
-rm(pam_allspec, pam_raw)
+# clear garbage
 gc()
 
-# calculate distance to the centroid for species
-ctrd_dists <- as.data.frame(
-  dispRity(
-    pca_dat %>% dplyr::select(-species, -sex) %>% as.matrix(), 
-    metric = get(metric_get))$disparity[[1]][[1]]
-) %>% 
-  rename(
-    centroid_distance = V1
-  )
-rownames(ctrd_dists) <- rownames(pca_dat)
+# generate individual list of sex-specific species values of metric of interest (keep or discard sexes
+# depending on value of sex_match)
+# first set sex list to iterate over
+sexes <- set_sex_list(sex_interest)
 
-# filter to individual sexes
-ctrd_dists_M <- ctrd_dists[grepl("-M", rownames(ctrd_dists)), , drop = FALSE]
-rownames(ctrd_dists_M) <- sapply(strsplit(rownames(ctrd_dists_M), split = "-"), "[", 1)
-ctrd_dists_F <- ctrd_dists[grepl("-F", rownames(ctrd_dists)), , drop = FALSE]
-rownames(ctrd_dists_F) <- sapply(strsplit(rownames(ctrd_dists_F), split = "-"), "[", 1)
-ctrd_dists_U <- ctrd_dists[grepl("-U", rownames(ctrd_dists)), , drop = FALSE]
-rownames(ctrd_dists_U) <- sapply(strsplit(rownames(ctrd_dists_U), split = "-"), "[", 1)
+# now apply a function to extract named vector lists of values for each sex individually
+sexed_pca_list <- lapply(sexes, extract_sex_vals, div_data = pca_dat, assemblage_level = TRUE)
+names(sexed_pca_list) <- sexes
 
-# convert to named vectors
-M_names <- rownames(ctrd_dists_M)
-ctrd_dists_M <- ctrd_dists_M$centroid_distance
-names(ctrd_dists_M) <- M_names
-F_names <- rownames(ctrd_dists_F)
-ctrd_dists_F <- ctrd_dists_F$centroid_distance
-names(ctrd_dists_F) <- F_names
-U_names <- rownames(ctrd_dists_U)
-ctrd_dists_U <- ctrd_dists_U$centroid_distance
-names(ctrd_dists_U) <- U_names
-rm(M_names, F_names, U_names)
-
-# loop to calculate average diversity metric for all species present within each ecoregion
-
-# # first add extra columns for male and female mean metrics
-# tmp_df <- data.frame(rep(NA, times = nrow(ecoregions)), rep(NA, times = nrow(ecoregions)))
-# colnames(tmp_df) <- c(
-#   paste("mean", (sub("-", "_", metric)), "M", sep = "_"),
-#   paste("mean", (sub("-", "_", metric)), "F", sep = "_")
-# )
-# ecoregions <- cbind(ecoregions, tmp_df)
-# rm(tmp_df)
-
-# get null terra raster
-null_terrast <- terra::rast(null_rast)
-
-
-# for(i in nrow(ecoregions)){
-#   
-#   # get ecoregion of interest
-#   ecoreg_i <- ecoregions[i, ]
-#   
-# 
-#   # create null rast, subsetted to extent of ecoregion
-#   # first assign values to null_rast to keep track of grid cells
-#   null_terrast_sub <- null_terrast
-#   terra::values(null_terrast_sub) <- 1:length(terra::values(null_terrast_sub))
-#   null_terrast_sub <- null_terrast_sub %>% 
-#     crop(ecoreg_i) %>% 
-#     mask(ecoreg_i)
-#   
-#   # use values of subsetted raster to subset PAM to ROI
-#   pam_sub <- pam[terra::values(null_terrast_sub), ]
-# 
-#   # get species which are present in subsetted PAM
-#   species_pres <- names(which(apply(pam_sub, 2, function(x) any(!(is.na(x))))))
-#   
-#   # get average distance to centroids of present species for males and females
-#   ecoregions$avg_centr_dist_M <- get(avg)(ctrd_dists_M[species_pres])
-#   ecoregions$avg_centr_dist_F <- get(avg)(ctrd_dists_F[species_pres])
-#   
-#   
-# }
-
-# function to calculate average value of metric for males and females for each ecoregion
-# returns [1, 2] matrix that can be inputted to ecoregion data
-calc_avg_metric <- function(ecoreg, metric_M, metric_F, null_terrast, ncells, avg){
+# if calculating diversity loss vs global species pool, calculate distance to global centroid for individual
+# sexed species
+if(div_loss_type == "global"){
   
-  # for debugging purposes (only works if regions == "ecoregions)
-  # ecoreg_num <- ecoreg$OBJECTID
-  # ecoreg_name <- ecoreg$ECO_NAME
+  # first calculate the metric
+  sexed_global_metric <- lapply(sexed_pca_list, metric_vals, metric = metric)
   
-  # create null rast, subsetted to extent of ecoregion
-  # first assign values to null_rast to keep track of grid cells
-  null_terrast_sub <- null_terrast
-  terra::values(null_terrast_sub) <- 1:ncells
-  null_terrast_sub <- null_terrast_sub %>% 
-    terra::crop(ecoreg) %>% 
-    terra::mask(ecoreg)
-  
-  # use values of subsetted raster to subset PAM to ROI
-  pam_sub <- pam[terra::values(null_terrast_sub), ]
-  
-  # check if 1 or fewer grid cells
-  if(length(terra::values(null_terrast_sub)) < 2){
-    # get species which are present in subsetted PAM
-    species_pres <- names(which(!is.na(pam_sub)))
-  } else {
-    # get species which are present in subsetted PAM
-    species_pres <- names(which(apply(pam_sub, 2, function(x) any(!(is.na(x))))))
-  }
-  
-  # check if there are as many or more species in ROI than the threshold SR
-  if(length(species_pres) >= sr_threshold){
-    
-    # if there are enough species, get average distance to centroids of 
-    # present species for males and females
-    avg_metric_M <- get(avg)(metric_M[species_pres], na.rm = TRUE)
-    avg_metric_F <- get(avg)(metric_F[species_pres], na.rm = TRUE) 
-  } else {
-    
-    # if there are fewer, set values = NA
-    avg_metric_M <- NA
-    avg_metric_F <- NA
-  }
-  
-  # set species richness value
-  sr <- length(species_pres)
-  
-  avgs <- c(avg_metric_M, avg_metric_F, sr)
-  
-  if(regions == "ecoregions"){
-    ## SET VALUES FOR ECOREGION OBJECTID 207 - "Rock and Ice" - BIOM_NUM 11 - to 
-    ## NA - it seems, from looking at Dinerstein et al (2017) and their interactive map
-    ## https://ecoregions.appspot.com/ that this should be possibly excluded as it's
-    ## basically uninhabited - it has an artificially extremely high species richness
-    ## because it spans all of Antarctica, Greenland, parts of the Himalaya, Iceland, 
-    ## and Northwestern North America
-    if(ecoreg$OBJECTID == 207){
-      avgs <- rep(NA, times = 3)
+  # now get the average metric for each region
+  # get number of regions
+  n_regions <- length(attr(region_shapes, "row.names"))
+  # apply function across sexes and across rows of ecoregions
+  avg_vals <- lapply(sexed_global_metric, function(sexed_metric){
+    lapply(
+      1:n_regions, calc_regions_global_metric,
+      region_shapes = region_shapes, region_type = regions, metric = metric, metric_vals = sexed_metric, div_loss_type = div_loss_type, null_terrast = null_rast, avg_par = avg_par
+    )
     }
+  )
+  
+} else if(div_loss_type == "local"){
+  # if calculating diversity loss vs local species pool, calculate distance to local centroid for individual
+  # regions  
+  
+  
+  # get number of regions
+  n_regions <- length(attr(region_shapes, "row.names"))
+  
+  # need to apply to each sexed pca dataset
+  avg_vals <- lapply(
+    
+    sexed_pca_list, function(sexed_pca_data){
+      
+      # non-parallel version
+      if(parallelise == FALSE){
+        
+        # get the average metric for each region - feed sexed pca data into the function to calculate 
+        # regional average metric (applied over each region)
+        result <- lapply(
+          1:n_regions, calc_regions_global_metric,
+          region_shapes = region_shapes, region_type = regions, metric = metric, metric_vals = NULL, pca_data = sexed_pca_data, div_loss_type = div_loss_type, null_terrast = null_rast, avg_par = avg_par
+        )
+        
+      } else if(parallelise == TRUE){
+        
+        #### NOT USE - doesn't currently work
+        
+        # set up cluster
+        no_cores <- parallel::detectCores() - 10
+        cl <- parallel::makeCluster(no_cores)
+        
+        # export calculation function
+        parallel::clusterExport(cl, c("calc_regions_global_metric", "region_shapes", "regions", "metric", "sexed_pca_data", "div_loss_type", "null_rast", "avg_par", "n_regions"), envir = environment())
+        
+
+        # parallel apply over the regions
+        result <- parallel::parLapply(cl, 1:n_regions, function(region_number){
+          calc_regions_global_metric(
+            region_index = region_number, region_shapes = region_shapes, region_type = regions, 
+            metric = metric, metric_vals = NULL, pca_data = sexed_pca_data, 
+            div_loss_type = div_loss_type, null_terrast = null_rast, avg_par = avg_par
+          )
+        })
+        
+        # stop cluster
+        parallel::stopCluster(cl)
+        
+      }
+      
+      return(result)
+      
+    }
+  )
+    
   }
 
-  
-  return(avgs)
-  
-}
 
-
-# apply function across rows of ecoregions
-avg_vals <- lapply(1:nrow(ecoregions), function(i) {
-  x <- ecoregions[i, ]
-  calc_avg_metric(x, metric_M = ctrd_dists_M, metric_F = ctrd_dists_F, null_terrast = null_terrast, ncells = length(terra::values(null_terrast)), avg = avg)
-    })
-# convert output to 2-column matrix
-avg_vals <- do.call(rbind, avg_vals)
-colnames(avg_vals) <- c(
-  paste(avg, (sub("-", "_", metric)), "M", sep = "_"),
-  paste(avg, (sub("-", "_", metric)), "F", sep = "_"),
-  "species_richness"
+# convert output to 3-column matrix
+results_df <- data.frame(
+  M_values = sapply(avg_vals$M, function(x) x[1]),
+  F_values = sapply(avg_vals$F, function(x) x[1]),
+  species_richness = sapply(avg_vals$M, function(x) x[2])  # or use avg_vals$F
 )
 
 # bind to ecoregion data
-ecoregions <- cbind(ecoregions, avg_vals)
+region_shapes <- cbind(region_shapes, results_df)
 
 
 
@@ -364,7 +233,7 @@ plots <- list()
 
 # sr plot
 psr <- ggplot() + 
-  geom_sf(data = ecoregions, aes(fill = species_richness, colour = species_richness)) +
+  geom_sf(data = region_shapes, aes(fill = species_richness, colour = species_richness)) +
   scale_fill_viridis_c() + 
   scale_colour_viridis_c() + 
   coord_sf(expand = FALSE) + 
@@ -373,30 +242,35 @@ plots[["species_richness"]] <- psr
 
 # male plot
 pm <- ggplot() + 
-  geom_sf(data = ecoregions, aes(fill = get(paste0(avg, "_centr_dist_M")), colour = get(paste0(avg, "_centr_dist_M")))) +
+  geom_sf(data = region_shapes, aes(fill = M_values, colour = M_values)) +
   scale_fill_viridis_c() + 
   scale_colour_viridis_c() + 
   coord_sf(expand = FALSE) + 
-  labs(fill = paste0(avg, "_centr_dist_M"), colour = paste0(avg, "_centr_dist_M"))
+  labs(fill = paste0(avg_par, "_metric_M"), colour = paste0(avg_par, "_metric_M"))
 
 plots[["male_metric"]] <- pm
 
 # female plot
 pf <- ggplot() + 
-  geom_sf(data = ecoregions, aes(fill = get(paste0(avg, "_centr_dist_F")), colour = get(paste0(avg, "_centr_dist_F")))) +
+  geom_sf(data = region_shapes, aes(fill = F_values, colour = F_values)) +
   scale_fill_viridis_c() + 
   scale_colour_viridis_c() + 
   coord_sf(expand = FALSE) + 
-  labs(fill = paste0(avg, "_centr_dist_F"), colour = paste0(avg, "_centr_dist_F"))
+  labs(fill = paste0(avg_par, "_metric_F"), colour = paste0(avg_par, "_metric_F"))
 
 plots[["female_metric"]] <- pf
 
-png_filename <- paste(clade, "patches", regions, space, sex_match, avg, metric, "sr_thresh", sr_threshold, pam_res, "Behrman", pam_type, pam_seas, "png", sep = ".")
+png_filename <- paste(clade, "patches", sex_match, regions, avg_par, div_loss_type, metric, "sr_thresh", sr_threshold, pam_res, "Behrman", pam_type, pam_seas, "png", sep = ".")
+
+space_plot_path <- here::here(
+  "2_Patches", "4_OutputPlots", "3_Spatial_mapping", "4_Bioregion_level_mapping", pam_res, space, pam_type
+)
+if(!dir.exists(space_plot_path)){
+  dir.create(space_plot_path, recursive = TRUE)
+}
+
 png(
-  here::here(
-    "2_Patches", "4_OutputPlots", "3_Spatial_mapping", pam_res, space,
-    png_filename
-  ), 
+  paste(space_plot_path, png_filename, sep = "/"), 
   width = 210, height = 250, units = "mm", pointsize = 24, res = 100
 )
 
@@ -405,10 +279,8 @@ gridExtra::grid.arrange(grobs = plots, nrow = 3)
 dev.off()
 
 
-# inspect most species-rich ecoregions
-ecoregions %>% 
-  filter(species_richness > 0) %>% 
-  arrange((species_richness)) %>% 
-  as.data.frame() %>% 
-  head(n = 20) %>% 
-  select(ECO_ID)
+# inspect most diverse ecoregions
+region_shapes %>% 
+  arrange(desc(F_values)) %>% 
+  head(n = 10)
+
