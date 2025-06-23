@@ -28,7 +28,7 @@ source(
 
 ## EDITABLE CODE ## ----
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Passeriformes"
+clade <- "Neoaves"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
@@ -71,6 +71,16 @@ pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLi
 regions <- "ecoregions"
 # parallelise working (parallelisation doesn't currently work so set to FALSE)
 parallelise <- FALSE
+
+## Plotting parameters
+# Select whether to use binned (based on quantiles) or continuous colour scale
+col_scale_type <- "binned"
+# If binned, choose the number of quantiles to use
+nquants <- 10
+# Also plot species richness map?
+plot_sr <- TRUE
+## Use viridis_c, viridis turbo palette or custom colour palette?
+palette_choice <- "viridis"
 ## END EDITABLE CODE ##
 
 # set dispRity metric
@@ -222,45 +232,131 @@ results_df <- data.frame(
   species_richness = sapply(avg_vals$M, function(x) x[2])  # or use avg_vals$F
 )
 
+# if using a quantile colour scale, create a new column of classes based on metric value quantiles
+# for each sex
+if(col_scale_type == "binned"){
+  breaks <- lapply(sexes, function(sex){
+    
+    colname <- paste(sex, "values", sep = "_")
+    
+    bks <- quantile(results_df[, colname], na.rm = TRUE, probs = seq(0, 1, by = 1/nquants))
+    
+    # make names of quants a rounded version of the quantiles (for plotting)
+    names(bks) <- round(bks, digits = 1)
+    
+    return(bks)
+    
+  })
+  breaks[["sr"]] <- quantile(results_df[, "species_richness"], na.rm = TRUE, probs = seq(0, 1, by = 1/nquants))
+  names(breaks[["sr"]]) <- round(breaks[["sr"]], digits = 1)
+  names(breaks) <- c(sexes, "sr")
+  
+  # create function to provide class names for single data column
+  class_namer <- function(data_col, colour_breaks, n_quantiles){
+    
+    class_col <- rep(NA, times = length(data_col))
+    
+    for(quant in 1:n_quantiles){
+      class_col[data_col < colour_breaks[quant + 1] & is.na(class_col)] <- as.character(quant)
+    }
+    
+    return(class_col)
+    
+  }
+  
+  for(sex in sexes){
+    
+    results_df[paste("col_class", sex, sep = "_")] <- class_namer(results_df[, paste(sex, "values", sep = "_")], breaks[[sex]], nquants)
+    
+  }
+  ### BELOW LINE DOESN'T WORK
+  results_df["col_class_sr"] <- class_namer(results_df[, "species_richness"], breaks[["sr"]], nquants)
+}
+
+
 # bind to ecoregion data
 region_shapes <- cbind(region_shapes, results_df)
 
 
-
+# Plot ----
 
 # plot ecoregions coloured by species richness and by average metric
 plots <- list()
 
-# sr plot
-psr <- ggplot() + 
-  geom_sf(data = region_shapes, aes(fill = species_richness, colour = species_richness)) +
-  scale_fill_viridis_c() + 
-  scale_colour_viridis_c() + 
-  coord_sf(expand = FALSE) + 
-  labs(fill = "species_richness", colour = "species_richness")
-plots[["species_richness"]] <- psr
+# for continuous colour scale
+if(col_scale_type == "continuous"){
+  
+  # sr plot
+  psr <- ggplot() + 
+    geom_sf(data = region_shapes, aes(fill = species_richness, colour = species_richness)) +
+    scale_fill_viridis_c() + 
+    scale_colour_viridis_c() + 
+    coord_sf(expand = FALSE) + 
+    labs(fill = "species_richness", colour = "species_richness")
+  plots[["species_richness"]] <- psr
+  
+  # male plot
+  pm <- ggplot() + 
+    geom_sf(data = region_shapes, aes(fill = M_values, colour = M_values)) +
+    scale_fill_viridis_c() + 
+    scale_colour_viridis_c() + 
+    coord_sf(expand = FALSE) + 
+    labs(fill = paste0(avg_par, "_metric_M"), colour = paste0(avg_par, "_metric_M"))
+  
+  plots[["male_metric"]] <- pm
+  
+  # female plot
+  pf <- ggplot() + 
+    geom_sf(data = region_shapes, aes(fill = F_values, colour = F_values)) +
+    scale_fill_viridis_c() + 
+    scale_colour_viridis_c() + 
+    coord_sf(expand = FALSE) + 
+    labs(fill = paste0(avg_par, "_metric_F"), colour = paste0(avg_par, "_metric_F"))
+  
+  plots[["female_metric"]] <- pf
+  
+} else if(col_scale_type == "binned"){
+  
+  # create colour palette
+  col_pal <- viridisLite::viridis(nquants)
+  names(col_pal) <- 1:nquants
+  na_col <- "grey50"
+  
+  # plots
+  # sr plot
+  psr <- ggplot() + 
+    geom_sf(data = region_shapes, aes(fill = col_class_sr, colour = col_class_sr)) +
+    scale_fill_manual(values = col_pal, na.value = na_col) + 
+    scale_colour_manual(values = col_pal, na.value = na_col) + 
+    coord_sf(expand = FALSE) + 
+    labs(fill = "species_richness", colour = "species_richness")
+  plots[["species_richness"]] <- psr
+  
+  # male plot
+  pm <- ggplot() + 
+    geom_sf(data = region_shapes, aes(fill = col_class_M, colour = col_class_M)) +
+    scale_fill_manual(values = col_pal, na.value = na_col) + 
+    scale_colour_manual(values = col_pal, na.value = na_col) + 
+    coord_sf(expand = FALSE) + 
+    labs(fill = paste0(avg_par, "_metric_M"), colour = paste0(avg_par, "_metric_M"))
+  
+  plots[["male_metric"]] <- pm
+  
+  # female plot
+  pf <- ggplot() + 
+    geom_sf(data = region_shapes, aes(fill = col_class_F, colour = col_class_F)) +
+    scale_fill_manual(values = col_pal, na.value = na_col) + 
+    scale_colour_manual(values = col_pal, na.value = na_col) + 
+    coord_sf(expand = FALSE) + 
+    labs(fill = paste0(avg_par, "_metric_F"), colour = paste0(avg_par, "_metric_F"))
+  
+  plots[["female_metric"]] <- pf
+ 
+  
+}
 
-# male plot
-pm <- ggplot() + 
-  geom_sf(data = region_shapes, aes(fill = M_values, colour = M_values)) +
-  scale_fill_viridis_c() + 
-  scale_colour_viridis_c() + 
-  coord_sf(expand = FALSE) + 
-  labs(fill = paste0(avg_par, "_metric_M"), colour = paste0(avg_par, "_metric_M"))
-
-plots[["male_metric"]] <- pm
-
-# female plot
-pf <- ggplot() + 
-  geom_sf(data = region_shapes, aes(fill = F_values, colour = F_values)) +
-  scale_fill_viridis_c() + 
-  scale_colour_viridis_c() + 
-  coord_sf(expand = FALSE) + 
-  labs(fill = paste0(avg_par, "_metric_F"), colour = paste0(avg_par, "_metric_F"))
-
-plots[["female_metric"]] <- pf
-
-png_filename <- paste(clade, "patches", sex_match, regions, avg_par, div_loss_type, metric, "sr_thresh", sr_threshold, pam_res, "Behrman", pam_type, pam_seas, "png", sep = ".")
+# save
+png_filename <- paste(clade, "patches", sex_match, regions, col_scale_type, avg_par, div_loss_type, metric, "sr_thresh", sr_threshold, pam_res, "Behrman", pam_type, pam_seas, "png", sep = ".")
 
 space_plot_path <- here::here(
   "2_Patches", "4_OutputPlots", "3_Spatial_mapping", "4_Bioregion_level_mapping", pam_res, space, pam_type
@@ -284,3 +380,8 @@ region_shapes %>%
   arrange(desc(F_values)) %>% 
   head(n = 10)
 
+# inspect ecoregions in top quantiles
+region_shapes %>% 
+  filter(
+    col_class_F == as.character(nquants)
+  )
