@@ -28,7 +28,7 @@ source(
 
 ## EDITABLE CODE ## ----
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Neoaves"
+clade <- "Passeriformes"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
@@ -63,7 +63,7 @@ pam_type <- "conservative"
 # clip PAM to land only? ("_clipped" or "")
 pam_seas <- "_clipped"
 # select PAM grid cell resolution
-pam_res <- "50km"
+pam_res <- "200km"
 # enter PAM files location
 pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLife_Shapefiles_GHT/PAMs"
 #pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLife_Shapefiles_v9/PAMs/100km/Behrmann_cea/"
@@ -385,3 +385,37 @@ region_shapes %>%
   filter(
     col_class_F == as.character(nquants)
   )
+
+
+# dev
+
+# first pivot longer to get all values in one column
+r_s_long <- region_shapes %>% 
+  pivot_longer(c(M_values, F_values, -geometry), names_to = "sex") %>% 
+  select(
+    -c(col_class_M, col_class_F, col_class_sr)
+  )
+
+# add quantile column
+value_breaks <- quantile(r_s_long$value, probs = seq(0, 1, 1/nquants), na.rm = TRUE)
+break_labels <- rep(NA, times = nquants)
+for(label_index in 1:nquants){
+  
+  break_labels[label_index] <- paste0(round(value_breaks[label_index], 1), "-", round(value_breaks[label_index + 1], 1))
+  
+}
+r_s_long$val_quant <- r_s_long$value %>% 
+  cut(
+    breaks = value_breaks,
+    include.lowest = TRUE,
+    labels = break_labels
+  )
+
+ggplot() + 
+  geom_sf(data = r_s_long, aes(fill = val_quant, colour = val_quant)) + 
+  scale_fill_viridis_d(name = metric) + 
+  scale_colour_viridis_d(guide = "none") +
+  facet_wrap(~ sex, ncol = 1) + 
+  theme_minimal()
+  
+
