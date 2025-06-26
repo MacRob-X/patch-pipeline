@@ -265,3 +265,285 @@ plot.FourPatch <- function(obj1, obj2, obj3, obj4, filepath = NULL, asp = T, tax
 }
 
 
+# Plot patches space with colour grids
+plot_patch_grids <- function(
+    x_axis = NULL, y_axis = NULL,
+    data_matrix = NULL,
+    umap_obj = NULL, 
+    prcomp_obj = NULL,
+    colour_grid_path,
+    row_names = NULL,
+    x_label = NULL, y_label = NULL,
+    asp_ratio = c("wrap", "square"),
+    save_as = NULL, # currently only "png" and "plot_object" is implemented
+    save_path = NULL,
+    font_par = NULL
+){
+  
+  # function to test if axes are atomic, numeric vectors
+  is.anv <- function(axis){
+    if(is.atomic(axis) & is.numeric(axis) & is.vector(axis)){
+      return(TRUE)
+    } else {
+      return(FALSE)
+    }
+  }
+  
+  # Check only one data type has been provided - stop if not
+  if(is.anv(x_axis) & is.anv(y_axis)){
+    if(!is.null(data_matrix) | !is.null(umap_obj) | !is.null(prcomp_obj)){
+      stop("More than one data type provided.")
+    }
+  } else if(is.character(x_axis) & is.character(y_axis)){
+    if(all(is.null(data_matrix), is.null(umap_obj), is.null(prcomp_obj))){
+      stop("No data provided.")
+    } else if((!is.null(data_matrix) + !is.null(umap_obj) + !is.null(prcomp_obj)) >= 2){
+      stop("More than one data type provided.")
+    }
+  }
+  
+  # Check what type of object has been provided and set up plot space
+  
+  # if axes have been provided as data columns
+  if(is.anv(x_axis) & is.anv(y_axis)){
+    
+    # check if rownames have been provided and match length of data columns 
+    # need the rownames to get the png colour grid names
+    if(is.null(row_names)){
+      stop("No rownames provided.")
+    }
+    
+    plot_space <- cbind(x_axis, y_axis)
+    rownames(plot_space) <- row_names
+    
+    x_axis <- "axis_1"; y_axis <- "axis_2"
+    colnames(plot_space) <- c(x_axis, y_axis)
+    
+    # check if axis labels have been provided
+    if(any(is.null(x_label), is.null(y_label))){
+      warning("Axis labels not set. Setting to default labels.")
+      # set to defaults if not provided
+      x_label <- "Axis 1"; y_label <- "Axis 2"
+    }
+    
+  } else if(is.character(x_axis) & is.character(y_axis)){
+    # if axes have been provided as characters (e.g. "PC1", "PC2", "UMAP1", "UMAP2 etc)
+    
+    # Check if data has been provided as a prcomp object, a UMAP object, or as a data matrix
+    # and extract data if necessary
+    if(!is.null(prcomp_obj)){
+      
+      plot_space <- prcomp_obj %>% 
+        magrittr::extract2("x") %>% 
+        as.data.frame()
+      
+      # get proportions of variance for each axis
+      pca_variance <- prcomp_obj %>% 
+        summary() %>% 
+        magrittr::extract2("importance") %>% 
+        as.data.frame()
+      
+      
+    } else if(!is.null(umap_obj)){
+      
+      plot_space <- umap_obj %>% 
+        magrittr::extract2("layout") %>% 
+        as.data.frame() %>% 
+        rename(
+          UMAP1 = V1, UMAP2 = V2
+        )
+      x_axis <- "UMAP1"; y_axis <- "UMAP2"
+ 
+    } else if(!is.null(data_matrix)){
+      
+      plot_space <- data_matrix
+      
+      # check that named axes are in data matrix
+      if(!(x_axis %in% colnames(plot_space) & y_axis %in% colnames(plot_space))){
+        stop("Chosen axes are not columns in data_matrix.")
+      }
+      
+    }
+    
+  } else if(any(is.null(x_axis), is.null(y_axis))){
+    
+    if(!is.null(umap_obj)){
+      
+      plot_space <- umap_obj %>% 
+        magrittr::extract2("layout") %>% 
+        as.data.frame() %>% 
+        rename(
+          UMAP1 = V1, UMAP2 = V2
+        )
+      x_axis <- "UMAP1"; y_axis <- "UMAP2"
+      
+    }
+    
+  }
+  
+  # set axis labels if not yet set
+  if(!is.null(umap_obj)){
+    x_label <- "UMAP1"
+    y_label <- "UMAP2"
+  } else if(!is.null(prcomp_obj)) {
+    x_label <- paste0(x_axis, " (", round(pca_variance[, x_axis][2], 2) * 100, "% of variance)")
+    y_label <- paste0(y_axis, " (", round(pca_variance[, y_axis][2], 2) * 100, "% of variance)")
+  } else if(!is.null(data_matrix) & any(is.null(x_label), is.null(y_label))){
+    warning("Axis labels not set. Setting to axis names.")
+    # set to defaults if not provided
+    x_label <- x_axis; y_label <- y_axis
+  }
+  
+  
+  # set up saving
+  if(!is.null(save_as)){
+    if(save_as == "png"){
+      
+      # set up aspect ratio
+      if(asp_ratio == "wrap"){
+        # determine axis with greatest range (to determine size of png)
+        range_x_axis <- diff(range(plot_space[, x_axis]))
+        range_y_axis <- diff(range(plot_space[, y_axis]))
+        if(range_x_axis > range_y_axis){
+          png_width <- 2500
+          png_height <- png_width * (range_y_axis / range_x_axis)
+        } else if(range_y_axis > range_x_axis){
+          png_height <- 2500
+          png_width <- png_height * (range_x_axis / range_y_axis)
+        }
+      } else if (asp_ratio == "square"){
+        png_width <- 2500
+        png_height <- 2500
+      }
+      
+      # set up device
+      if(is.null(font_par)){
+        png(
+          save_path,
+          width = png_width, height = png_height,
+          units = "px",
+          pointsize = 40
+        )
+      } else {
+        png(
+          save_path,
+          width = png_width, height = png_height,
+          units = "px",
+          pointsize = 40,
+          family = font_par
+        )
+      }
+      
+    }
+  }
+  
+  # fix aspect ratio as square, if requested
+  if(asp_ratio == "square"){
+    par(pty = "s")
+  }
+  
+  dev.hold()
+  
+  plot(plot_space[, y_axis] ~ plot_space[, x_axis], 
+       asp = T, 
+       type = "n", 
+       xlab = "", ylab = "", las = 1,
+       # xaxt = "n", yaxt = "n"
+       #     xlim = xrange,  ylim = yrange
+  )
+  title(xlab = x_label, ylab = y_label)
+  
+  box(lwd = 2)
+  rw <- diff(range(plot_space[,1]))/12
+  
+  for(i in 1:nrow(plot_space)){
+    fname <- rownames(plot_space)[i]
+    fpng <- png::readPNG(paste0(
+      colour_grid_path, "/",
+      paste(strsplit(fname, split="-")[[1]][1:2], collapse = "_"), ".png"))
+    rasterImage(fpng, 
+                xleft = plot_space[i, x_axis] - (rw/15), 
+                ybottom = plot_space[i, y_axis]-(rw/9), 
+                xright = plot_space[i, x_axis]+(rw/15), 
+                ytop = plot_space[i, y_axis]+(rw/9))
+    cat(paste0("\r", i, " of ", nrow(plot_space), " processed"))
+    
+    if(isTRUE(all.equal(i/500, as.integer(i/500)))){
+      # Force an update to the graphics device after each 500 images
+      # This helps prevent memory issues
+      if(interactive()) {
+        Sys.sleep(0.01)  # Small delay to allow graphics to update
+      }
+      
+      # Free up memory
+      gc()
+    }
+    
+  }
+  
+  dev.flush()
+  
+  if(!is.null(save_as)){
+    dev.off()
+  }
+  
+  
+}
+
+
+# Plot four colour grid plots together (inherits from above colour grid plotting function)
+plot_four_cg <- function(
+  plot1_data, plot1_x_axis, plot1_y_axis,
+  plot2_data, plot2_x_axis, plot2_y_axis,
+  plot3_data, plot3_x_axis, plot3_y_axis,
+  plot4_data, plot4_x_axis, plot4_y_axis,
+  cg_path,
+  save_type = "png",  # automatically plot as png - currently the only type supported
+  write_folder = NULL,
+  file_name,
+  png_width = 10, png_height = 10.5
+){
+  
+  if(save_type == "png"){
+    
+    # if no write path, write to current working directory
+    if(is.null(write_folder)){
+      write_folder <- getwd()
+    }
+    
+    # set up png plotting
+    full_path <- paste(write_folder, file_name, sep = "/")
+    png(full_path, width = png_width, height = png_height, units = "in", res = 600)
+    
+    # Set plotting parameters (2x2 grid)
+    par(mfrow = c(2, 2), mar = c(4, 4, 1, 1))
+    
+    #Plot graphs
+    for(plot_index in 1:4){
+      
+      # set plot object
+      plot_obj <- get(paste0("plot", plot_index, "_data"))
+      # set axes
+      plot_x_axis <- get(paste0("plot", plot_index, "_x_axis"))
+      plot_y_axis <- get(paste0("plot", plot_index, "_y_axis"))
+      
+      # check plot object class and plot accordingly
+      if(class(plot_obj) == "umap"){
+        plot_patch_grids(x_axis = plot_x_axis, y_axis = plot_y_axis, umap_obj = plot_obj, colour_grid_path = cg_path, asp_ratio = "square")
+      } else if(class(plot_obj) == "prcomp"){
+        plot_patch_grids(x_axis = plot_x_axis, y_axis = plot_y_axis, prcomp_obj = plot_obj, colour_grid_path = cg_path, asp_ratio = "square")
+      } else if(class(plot_obj) == "data.frame" | all(class(plot_obj) == c("matrix", "array"))){
+        plot_patch_grids(x_axis = plot_x_axis, y_axis = plot_y_axis, data_matrix = plot_obj, colour_grid_path = cg_path, asp_ratio = "square")
+      }
+      
+
+    }
+    
+    # End png saving
+    dev.off()
+    
+  }
+  
+  
+  
+}
