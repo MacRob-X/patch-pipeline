@@ -2057,3 +2057,441 @@ plot_space %>%
   geom_point() + 
   scale_colour_viridis_c()
 # actually doesn't represent this very well
+
+
+# 18/06/2025 ----
+
+# interactive species richness map ----
+
+# load in PAM as in mapping scripts
+
+
+# Clear environment
+rm(list=ls())
+
+# Load libraries
+library(dplyr)
+library(raster)
+library(ggplot2)
+library(tidyterra)
+library(dispRity)
+
+# Load shared functions ----
+source(
+  here::here(
+    "2_Patches", "2_Scripts", "R", "mapping.R"
+  )
+)
+
+
+## EDITABLE CODE ##
+# Select subset of species ("Neoaves" or "Passeriformes")
+clade <- "Neoaves"
+# select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
+# N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
+# (from 240603 to 240806)
+space <- "lab"
+# Select number of PC axes to retain ("all" or a number)
+axes <- "all"
+# select whether to use matched sex data (""all" or "matchedsex")
+# "matchedsex" will use diversity metrics calculated on a subset of data containing only species
+# for which we have both a male and female specimen (and excluding specimens of unknown sex)
+sex_match <- "matchedsex"
+# select sex of interest ("all", "male_female", "male_only", "female_only", "unknown_only")
+sex_interest <- "male_female"
+# select metric ("centr-dist", "nn-k", "nn-count", "sum.variances", "sum.ranges", "convhull.volume")
+metric <- "centr-dist"
+# select type of averaging to use ("mean" or "median")
+avg_par <- "median"
+# select whether to exclude grid cells with species richness below a certain threshold (e.g. 5)
+# set as 0 if no threshold wanted
+sr_threshold <- 5
+# select whether to exclude species with metric value below a certain percentile threshold (default is 75)
+sift_div_data <- FALSE
+# select whther to use liberal, conservative, or nominate IUCN data
+# "liberal" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
+# are assigned the highest threat level of the multiple species
+# "conservative" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
+# are assigned the lowest threat level of the multiple species
+# "nominate" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
+# are assigned the threat level of the BL species that corresponds to the nominate subspecies
+iucn_type <- "nominate"
+# select whether to use liberal, conservative, or specified PAM
+pam_type <- "conservative"
+# clip PAM to land only? ("_clipped" or "")
+pam_seas <- "_clipped"
+# select PAM grid cell resolution
+pam_res <- "50km"
+# enter PAM files location
+pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLife_Shapefiles_GHT/PAMs"
+#pams_filepath <- "X:/cooney_lab/Shared/Rob-MacDonald/SpatialData/BirdLife/BirdLife_Shapefiles_v9/PAMs/100km/Behrmann_cea/"
+
+## END EDITABLE CODE ##
+
+
+
+
+# Load data ----
+
+# Load PCA data
+pca_filename <- paste(clade, sex_match, "patches.231030.PCAcolspaces", "rds", sep = ".")
+pca_dat <- readRDS(
+  here::here(
+    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
+    pca_filename
+  )
+)[[space]][["x"]]
+
+# load PAM
+pam_filename <- paste0("PAM_birds_Behrman", pam_res, "_Pres12_Orig12_Seas12_", pam_type, pam_seas, ".rds")
+pam_raw <- readRDS(
+  paste(pams_filepath, pam_filename, sep = "/")
+)
+
+# Data preparation ----
+
+# restrict PCA to requested number of axes
+if(axes != "all"){
+  pca_dat <- pca_dat[, 1:axes]
+}
+
+# extract null raster from PAM
+null_rast <- extract_null_rast(pam_raw)
+
+# extract matrix values from PAM file
+pam <- extract_pam_vals(pam_raw)
+
+# remove raw PAM file (for RAM reasons)
+rm(pam_raw)
+gc()
+
+# change "Genus species" style to "Genus_species" style in PAM colnames
+colnames(pam) <- gsub(" ", "_", colnames(pam))
+
+# get list of species included in PCA data
+spp_list <- get_unique_spp(pca_dat)
+
+# subset pam to only species in diversity data
+pam <- subset_pam(pam, spp_list)
+
+# subset PCA data to only species present in PAM
+pca_dat <- subset_data_by_spp(pca_dat, colnames(pam))
+
+gc()
+
+# get species richness by grid cell
+species_richness <- calc_species_richness(pam)
+
+# create raster of species richness 
+sr_raster <- make_sr_raster(species_richness, null_rast)
+
+# from claude
+
+library(terra)
+library(leaflet)
+library(sf)
+
+# 1. Convert to dataframe to get individual cell coordinates
+richness_df <- as.data.frame(sr_raster, xy = TRUE, na.rm = TRUE)
+names(richness_df) <- c("x", "y", "richness")  # Keep original names first
+
+# 2. Transform coordinates from projected CRS to WGS84 (lat/lon)
+# Create an sf object with the projected coordinates
+richness_sf_points <- st_as_sf(richness_df, coords = c("x", "y"), crs = st_crs(sr_raster))
+
+# Transform to WGS84 (EPSG:4326)
+richness_sf_lonlat <- st_transform(richness_sf_points, crs = 4326)
+
+# Extract the transformed coordinates
+coords_lonlat <- st_coordinates(richness_sf_lonlat)
+richness_df$lon <- coords_lonlat[, 1]
+richness_df$lat <- coords_lonlat[, 2]
+
+# 3. Get the cell numbers for non-NA cells (same as before)
+cell_numbers <- which(!is.na(values(sr_raster)))
+
+# 4. Create species lists for each non-NA cell
+species_lists <- sapply(cell_numbers, function(cell_num) {
+  if(cell_num <= nrow(pam)) {
+    x <- pam[cell_num, ]
+    species_present <- colnames(pam)[x == 1 & !is.na(x)]
+    if(length(species_present) > 0) {
+      paste(species_present, collapse = "<br>")
+    } else {
+      "No species recorded"
+    }
+  } else {
+    "Cell index out of range"
+  }
+})
+
+# 5. Add species lists to dataframe
+richness_df$species_list <- species_lists
+
+# 6. Create the interactive map
+pal <- colorNumeric(palette = "YlOrRd", domain = richness_df$richness)
+
+leaflet(richness_df) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~lon, 
+    lat = ~lat,
+    radius = 4,
+    color = "white",
+    weight = 1,
+    fillColor = ~pal(richness),
+    fillOpacity = 0.8,
+    popup = ~paste(
+      "<b>Species Richness:</b>", richness, "<br><br>",
+      "<b>Species present:</b><br>", species_list
+    )
+  ) %>%
+  addLegend(
+    "bottomright", 
+    pal = pal, 
+    values = ~richness,
+    title = "Species<br>Richness"
+  )
+
+# here are some species present in a species-depauperate but highly colour diverse grid cell in
+# the Tiris-Zemmour region of Northern Mauritania
+tiris_zemmour_spp <- c("Pterocles_senegallus",
+                       "Pterocles_coronatus",
+                       "Oenanthe_leucopyga",
+                       "Eremopterix_nigriceps",
+                       "Corvus_ruficollis",
+                       "Ammomanes_deserti",
+                       "Alaemon_alaudipes",
+                       "Lanius_excubitor",
+                       "Chlamydotis_undulata")
+
+# let's plot the UMAP space with these species highlighted in red to see how they're distributed
+# in colour space
+umap_filepath <- here::here(
+  "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
+  paste(clade, sex_match, "patches.nn.25.mindist.0.1", space, "pca1-12.UMAP.rds", sep = ".")
+)
+umap_space <- readRDS(umap_filepath) %>% 
+  magrittr::extract2("layout")
+
+# plot space without t-z-spp
+t_z_mf <- c(
+  paste0(tiris_zemmour_spp, "-M"),
+  paste0(tiris_zemmour_spp, "-F")
+)
+umap_space %>% 
+  as.data.frame() %>% 
+  mutate(
+    spp_sex = rownames(.)
+  ) %>% 
+  mutate(
+    t_z = ifelse(spp_sex %in% t_z_mf, 1, 0.5)
+  ) %>% 
+  ggplot(aes(x = V1, y = V2, colour = t_z, alpha = t_z)) + 
+  geom_point() + 
+  scale_colour_viridis_c("turbo", direction = -1)
+
+# now the same for South Georgian species
+south_georgia_spp <- c(
+  "Thalassoica_antarctica",
+  "Thalassarche_melanophrys",
+  "Thalassarche_chrysostoma",
+  "Sterna_vittata",
+  "Puffinus_puffinus",
+  "Puffinus_griseus",
+  "Puffinus_gravis",
+  "Pterodroma_mollis",
+  "Pterodroma_incerta",
+  "Procellaria_cinerea",
+  "Procellaria_aequinoctialis",
+  "Phoebetria_palpebrata",
+  "Phoebetria_fusca",
+  "Pelecanoides_urinatrix",
+  "Pagodroma_nivea",
+  "Pachyptila_turtur",
+  "Pachyptila_desolata",
+  "Pachyptila_belcheri",
+  "Lugensa_brevirostris",
+  "Garrodia_nereis",
+  "Fulmarus_glacialoides",
+  "Diomedea_exulans",
+  "Daption_capense",
+  "Catharacta_antarctica",
+  "Pterodroma_macroptera"
+)
+
+s_g_mf <- c(
+  paste0(south_georgia_spp, "-M"),
+  paste0(south_georgia_spp, "-F")
+)
+umap_space %>% 
+  as.data.frame() %>% 
+  mutate(
+    spp_sex = rownames(.)
+  ) %>% 
+  mutate(
+    s_g = ifelse(spp_sex %in% s_g_mf, 1, 0.5)
+  ) %>% 
+  ggplot(aes(x = V1, y = V2, colour = s_g, alpha = s_g)) + 
+  geom_point() + 
+  scale_colour_viridis_c("turbo", direction = -1)
+
+
+# 26/06/2025 ----
+
+# Create function to plot colour grids ----
+# function is in R/plotting.R
+
+# load plotting functions
+source(
+  here::here(
+    "2_Patches", "2_Scripts", "R", "plotting.R"
+  )
+)
+
+# load data and call function
+
+# Load libraries ---- 
+library(dplyr)
+library(ggplot2)
+library(extrafont)
+
+# clear environment
+rm(list=ls())
+
+# Choose parameters ----
+## EDITABLE CODE ##
+## Select subset of species ("Neoaves" or "Passeriformes")
+clade <- "Passeriformes"
+## Choose colour space mapping
+## Note that if usmldbl or usmldblr, will have to manually modify date in filename below
+space <- "lab"
+# select whether to use matched sex data (""all" or "matchedsex")
+# "matchedsex" will use diversity metrics calculated on a subset of data containing only species
+# for which we have both a male and female specimen (and excluding specimens of unknown sex)
+sex_match <- "matchedsex"
+# plot all specimens ("all"), males only ("M"), or females only ("F")?
+sex_focus <- "all"
+## UMAP or PCA space?
+## FALSE - use the PCA space
+## TRUE - load a UMAP space from a file
+## "perform" - load a PCA space from a file, then perform UMAP on it
+## Note that if umap == TRUE, user will have to manually set path to umap file
+load_umap <- TRUE
+umap_filepath <- here::here(
+  "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
+  paste(clade, sex_match, "patches", space, "pca", "canonUMAP.rds", sep = ".")
+)
+# umap_filepath <- here::here(
+#   "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
+#   "Neoaves.patches.pca.jndxyzlumr.UMAPs.iterations.240326.rds"
+# )
+# If load_umap == FALSE, can set perform_umap == TRUE
+# to perform UMAP on the loaded PCA and then plot the UMAP axes
+perform_umap <- FALSE
+## Choose PCs to plot (if plotting PCA)
+x_axis <- "PC2"
+y_axis <- "PC3"
+## Choose aspect ratio 
+## -"square" fixes to size 2500x2500px 
+## - "wrap" sets the axis with the larger range to 2500px and scales the other accordingly)
+## "square" is better if you want to combine multiple plots into one figure, "wrap" 
+## is better for a single plot as it wraps the size of the plot to the range sizes
+## Note that the aspect ratio of the plot itself is always fixed to 1, this parameter is 
+## solely to control the aspect ratio of the output png
+asp_ratio <- "wrap"
+## Choose font "default" or name font (e.g. "Century Gothic", "AvenirNext LT Pro Regular)
+## Use extrafont::fonts() to see available fonts
+font_par <- "Century Gothic"
+
+# Load data ----
+umap <- readr::read_rds(umap_filepath)
+pca_filepath <- here::here(
+  "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA", 
+  paste(clade, sex_match, "patches.231030.PCAcolspaces", "rds", sep = ".")
+  #    paste0("Neoaves.patches.231030.PCAcolspaces.", space, ".240829.rds")
+)
+# load data from file
+prcomp <- readr::read_rds(pca_filepath)[[space]]
+
+pca_mat <- prcomp[["x"]]
+
+# set path to colour grids folder
+grid_path <- "C:/Users/bop23rxm/Documents/colour_grids_repositioned"
+
+# set save path
+save_path <- here::here(
+  "junk",
+  "test_colspace_plotting.png"
+)
+
+# try plotting space with the function, with different inputs
+
+# UMAP object input
+plot_patch_grids(
+  umap_obj = umap,
+  colour_grid_path = grid_path, 
+  asp_ratio = "wrap",
+  save_as = "png",
+  save_path = save_path
+)
+
+# prcomp object input
+plot_patch_grids(
+  prcomp_obj = prcomp,
+  x_axis = "PC1", y_axis = "PC2",
+  colour_grid_path = grid_path, 
+  asp_ratio = "wrap",
+  save_as = "png",
+  save_path = save_path
+)
+
+# data matrix input (pca matrix)
+# filter to males only for speed
+pca_mat <- pca_mat %>% 
+    as.data.frame() %>% 
+    mutate(
+      species = sapply(strsplit(rownames(.), split = "-"), "[", 1),
+      sex = sapply(strsplit(rownames(.), split = "-"), "[", 2)
+    ) %>% 
+    filter(
+      sex == "M"
+    ) %>% 
+    select(
+      -species, -sex
+    )
+
+plot_patch_grids(
+  data_matrix = pca_mat,
+  x_axis = "PC3", y_axis = "PC50",
+  colour_grid_path = grid_path, 
+  asp_ratio = "wrap",
+  save_as = "png",
+  save_path = save_path
+)
+
+# individual column input
+plot_patch_grids(
+  x_axis = pca_mat$PC1, y_axis = pca_mat$PC5,
+  x_label = "PC1", y_label = "PC5",
+  row_names = rownames(pca_mat),
+  colour_grid_path = grid_path,
+  asp_ratio = "wrap",
+  save_as = "png",
+  save_path = save_path
+)
+
+
+
+# try plotting four plots together (UMAP and first 6 PC axes)
+plot_four_cg(
+  umap, "UMAP1", "UMAP2",
+  prcomp, "PC1", "PC2",
+  prcomp, "PC3", "PC4",
+  prcomp, "PC5", "PC6",
+  cg_path = grid_path,
+  save_type = "png",
+  write_folder = here::here("junk"),
+  file_name = "test_four_plot.png"
+)
+
