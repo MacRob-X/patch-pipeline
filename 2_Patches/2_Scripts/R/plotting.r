@@ -161,7 +161,7 @@ plot.FourPix <- function(obj1, obj2, obj3, obj4, filepath, asp = T){
   png(filepath, width = 10, height=15, units = "in", res = 600)
   
   # Set plotting parameters (2x2 grid)
-  par(mfrow = c(2, 2), mar = c(4, 4, 1, 1))
+  par(mfcol = c(2, 2), mar = c(4, 4, 1, 1))
   
   #Plot graphs
   objects <- list(obj1, obj3, obj2, obj4)
@@ -277,7 +277,9 @@ plot_patch_grids <- function(
     asp_ratio = c("wrap", "square"),
     save_as = NULL, # currently only "png" and "plot_object" is implemented
     save_path = NULL,
-    font_par = NULL
+    font_par = NULL,
+    thin_number = NULL,
+    fourplot = FALSE, fourplot_size = c(10, 10.5)
 ){
   
   # function to test if axes are atomic, numeric vectors
@@ -381,6 +383,21 @@ plot_patch_grids <- function(
     
   }
   
+  # if requested, thin to specific number of random species
+  if(!is.null(thin_number)){
+    
+    all_spp <- sapply(strsplit(rownames(plot_space), split = "-"), "[", 1)
+    
+    unique_spp <- unique(sapply(strsplit(rownames(plot_space), split = "-"), "[", 1))
+    
+    spp_subset <- sample(unique_spp, thin_number, replace = FALSE)
+    
+    # subset plot space to only random species
+    rows_to_keep <- which(all_spp %in% spp_subset)
+    plot_space <- plot_space[rows_to_keep, ]
+    
+  }
+  
   # set axis labels if not yet set
   if(!is.null(umap_obj)){
     x_label <- "UMAP1"
@@ -454,7 +471,20 @@ plot_patch_grids <- function(
   title(xlab = x_label, ylab = y_label)
   
   box(lwd = 2)
-  rw <- diff(range(plot_space[,1]))/12
+  # if plotting as a single plot, define colour grid size relative to plot range
+  if(fourplot == FALSE){
+    rw <- diff(range(plot_space[,1]))/12
+    rw_x <- rw / 15
+    rw_y <- rw / 9
+  } else if(fourplot == TRUE){
+    # if plotting as part of a four-panel plot, define grid size as absolute relative to overall plot size
+    x_range <- diff(range(plot_space[, x_axis]))
+    grid_width_inches <- (fourplot_size[1] / 100) * 1.8
+    grid_size_par <- (grid_width_inches / fourplot_size[1]) * x_range
+    rw_x <- grid_size_par / 2
+    rw_y <- rw_x * (5/3)
+  }
+  
   
   for(i in 1:nrow(plot_space)){
     fname <- rownames(plot_space)[i]
@@ -462,10 +492,10 @@ plot_patch_grids <- function(
       colour_grid_path, "/",
       paste(strsplit(fname, split="-")[[1]][1:2], collapse = "_"), ".png"))
     rasterImage(fpng, 
-                xleft = plot_space[i, x_axis] - (rw/15), 
-                ybottom = plot_space[i, y_axis]-(rw/9), 
-                xright = plot_space[i, x_axis]+(rw/15), 
-                ytop = plot_space[i, y_axis]+(rw/9))
+                xleft = plot_space[i, x_axis] - rw_x, 
+                ybottom = plot_space[i, y_axis] - rw_y, 
+                xright = plot_space[i, x_axis] + rw_x, 
+                ytop = plot_space[i, y_axis] + rw_y)
     cat(paste0("\r", i, " of ", nrow(plot_space), " processed"))
     
     if(isTRUE(all.equal(i/500, as.integer(i/500)))){
@@ -501,9 +531,11 @@ plot_four_cg <- function(
   save_type = "png",  # automatically plot as png - currently the only type supported
   write_folder = NULL,
   file_name,
-  png_width = 10, png_height = 10.5
+  png_width = 10, png_height = 10.5, # in inches
+  thin_number = NULL
 ){
   
+
   if(save_type == "png"){
     
     # if no write path, write to current working directory
@@ -512,11 +544,12 @@ plot_four_cg <- function(
     }
     
     # set up png plotting
+    dpi <- 600
     full_path <- paste(write_folder, file_name, sep = "/")
-    png(full_path, width = png_width, height = png_height, units = "in", res = 600)
+    png(full_path, width = png_width, height = png_height, units = "in", res = dpi)
     
     # Set plotting parameters (2x2 grid)
-    par(mfrow = c(2, 2), mar = c(4, 4, 1, 1))
+    par(mfcol = c(2, 2), mar = c(4, 4, 1, 1))
     
     #Plot graphs
     for(plot_index in 1:4){
@@ -529,11 +562,11 @@ plot_four_cg <- function(
       
       # check plot object class and plot accordingly
       if(class(plot_obj) == "umap"){
-        plot_patch_grids(x_axis = plot_x_axis, y_axis = plot_y_axis, umap_obj = plot_obj, colour_grid_path = cg_path, asp_ratio = "square")
+        plot_patch_grids(x_axis = plot_x_axis, y_axis = plot_y_axis, umap_obj = plot_obj, colour_grid_path = cg_path, asp_ratio = "square", thin_number = thin_number, fourplot = TRUE, fourplot_size = c(png_width, png_height))
       } else if(class(plot_obj) == "prcomp"){
-        plot_patch_grids(x_axis = plot_x_axis, y_axis = plot_y_axis, prcomp_obj = plot_obj, colour_grid_path = cg_path, asp_ratio = "square")
+        plot_patch_grids(x_axis = plot_x_axis, y_axis = plot_y_axis, prcomp_obj = plot_obj, colour_grid_path = cg_path, asp_ratio = "square", thin_number = thin_number, fourplot = TRUE, fourplot_size = c(png_width, png_height))
       } else if(class(plot_obj) == "data.frame" | all(class(plot_obj) == c("matrix", "array"))){
-        plot_patch_grids(x_axis = plot_x_axis, y_axis = plot_y_axis, data_matrix = plot_obj, colour_grid_path = cg_path, asp_ratio = "square")
+        plot_patch_grids(x_axis = plot_x_axis, y_axis = plot_y_axis, data_matrix = plot_obj, colour_grid_path = cg_path, asp_ratio = "square", thin_number = thin_number, fourplot = TRUE, fourplot_size = c(png_width, png_height))
       }
       
 

@@ -1367,7 +1367,7 @@ sex_interest <- "male_female"
 
 axes <- paste0("PC", 1:8)
 pixel_type <- "lab"
-col_scale_type <- "axis_channel"
+col_scale_type <- "constant"
 
 # Load data ----
 
@@ -1852,9 +1852,22 @@ patch_loading_heatmap <- function(pca_space, axes, pixel_type, write_path = NULL
 
 }
 
-patch_loading_heatmap(pca_all, axes, pixel_type, col_scale_type = "axis")
+patch_loading_heatmap(pca_all, axes, pixel_type, col_scale_type = col_scale_type)
 
 patch_loading_heatmap(pca_all, axes, pixel_type, col_scale_type = "constant", stack_channels = TRUE)
+
+p <- patch_loading_heatmap(pca_all, axes, pixel_type, col_scale_type = col_scale_type, stack_channels = TRUE)
+
+folder_path <- here::here(
+  "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", space, "loading_heatmaps"
+)
+if(!dir.exists(folder_path)){
+  dir.create(folder_path, recursive = TRUE)
+}
+filename <- paste(clade, sex_match, sex_interest, "patches", paste0(axes[1], "-", tail(axes, 1)), "stackedchannels", col_scale_type, "loading_heatmaps.png", sep = "_")
+png(paste(folder_path, filename, sep = "/"), width = 4, height = 30, units = "in", res = 600)
+p
+dev.off()
 
 # 21/05/2025 ----
 # Plot centroid distance on UMAP
@@ -2342,13 +2355,6 @@ umap_space %>%
 # Create function to plot colour grids ----
 # function is in R/plotting.R
 
-# load plotting functions
-source(
-  here::here(
-    "2_Patches", "2_Scripts", "R", "plotting.R"
-  )
-)
-
 # load data and call function
 
 # Load libraries ---- 
@@ -2359,10 +2365,17 @@ library(extrafont)
 # clear environment
 rm(list=ls())
 
+# load plotting functions
+source(
+  here::here(
+    "2_Patches", "2_Scripts", "R", "plotting.R"
+  )
+)
+
 # Choose parameters ----
 ## EDITABLE CODE ##
 ## Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Passeriformes"
+clade <- "Neoaves"
 ## Choose colour space mapping
 ## Note that if usmldbl or usmldblr, will have to manually modify date in filename below
 space <- "lab"
@@ -2439,7 +2452,7 @@ plot_patch_grids(
 # prcomp object input
 plot_patch_grids(
   prcomp_obj = prcomp,
-  x_axis = "PC1", y_axis = "PC2",
+  x_axis = "PC25", y_axis = "PC26",
   colour_grid_path = grid_path, 
   asp_ratio = "wrap",
   save_as = "png",
@@ -2484,14 +2497,19 @@ plot_patch_grids(
 
 
 # try plotting four plots together (UMAP and first 6 PC axes)
+folder_path <- here::here(
+  "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", space
+)
+filename <- paste(clade, sex_match, sex_focus, "patches_PC1-PC8.png", sep = "_")
 plot_four_cg(
-  umap, "UMAP1", "UMAP2",
   prcomp, "PC1", "PC2",
   prcomp, "PC3", "PC4",
   prcomp, "PC5", "PC6",
+  prcomp, "PC7", "PC8",
   cg_path = grid_path,
   save_type = "png",
-  write_folder = here::here("junk"),
-  file_name = "test_four_plot.png"
+  write_folder = folder_path,
+ # thin_number = 500,
+  file_name = filename
 )
 
