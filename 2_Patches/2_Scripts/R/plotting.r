@@ -561,11 +561,11 @@ plot_four_cg <- function(
       plot_y_axis <- get(paste0("plot", plot_index, "_y_axis"))
       
       # check plot object class and plot accordingly
-      if(class(plot_obj) == "umap"){
+      if(class(plot_obj)[1] == "umap"){
         plot_patch_grids(x_axis = plot_x_axis, y_axis = plot_y_axis, umap_obj = plot_obj, colour_grid_path = cg_path, asp_ratio = "square", thin_number = thin_number, fourplot = TRUE, fourplot_size = c(png_width, png_height))
-      } else if(class(plot_obj) == "prcomp"){
+      } else if(class(plot_obj)[1] == "prcomp"){
         plot_patch_grids(x_axis = plot_x_axis, y_axis = plot_y_axis, prcomp_obj = plot_obj, colour_grid_path = cg_path, asp_ratio = "square", thin_number = thin_number, fourplot = TRUE, fourplot_size = c(png_width, png_height))
-      } else if(class(plot_obj) == "data.frame" | all(class(plot_obj) == c("matrix", "array"))){
+      } else if(class(plot_obj)[1] == "data.frame" | all(class(plot_obj) == c("matrix", "array"))){
         plot_patch_grids(x_axis = plot_x_axis, y_axis = plot_y_axis, data_matrix = plot_obj, colour_grid_path = cg_path, asp_ratio = "square", thin_number = thin_number, fourplot = TRUE, fourplot_size = c(png_width, png_height))
       }
       
