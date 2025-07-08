@@ -2476,7 +2476,7 @@ pca_mat <- pca_mat %>%
 
 plot_patch_grids(
   data_matrix = pca_mat,
-  x_axis = "PC3", y_axis = "PC50",
+  x_axis = "Comp1", y_axis = "Comp2",
   colour_grid_path = grid_path, 
   asp_ratio = "wrap",
   save_as = "png",
@@ -2513,3 +2513,53 @@ plot_four_cg(
   file_name = filename
 )
 
+
+# 07/07/2025 ----
+# Plot PACA (from KMult)
+
+# load plotting functions
+source(
+  here::here(
+    "2_Patches", "2_Scripts", "R", "plotting.R"
+  )
+)
+
+# load Kmult
+kmult <- readRDS("G:/My Drive/patch-pipeline/2_Patches/3_OutputData/3_Phylogenetic_signal/lab/kMult.M.hackettTrees1.rds")
+
+# set path to colour grids folder
+grid_path <- "C:/Users/bop23rxm/Documents/colour_grids_repositioned"
+
+# set save path
+save_path <- here::here(
+  "junk",
+  "test_pacaspace_plotting.png"
+)
+
+# extract PACA embeddings
+paca_mat <- kmult$PACA$x
+
+# add sex to rownames
+rownames(paca_mat) <- paste0(rownames(pca_mat), "-M")
+
+# plot
+plot_patch_grids(
+  data_matrix = paca_mat,
+  x_axis = "Comp1", y_axis = "Comp2",
+  colour_grid_path = grid_path, 
+  asp_ratio = "wrap",
+  save_as = "png",
+  save_path = save_path
+)
+
+plot_four_cg(
+  paca_mat, "Comp1", "Comp2",
+  paca_mat, "Comp3", "Comp4",
+  paca_mat, "Comp5", "Comp6",
+  paca_mat, "Comp7", "Comp8",
+  cg_path = grid_path,
+  save_type = "png",
+  write_folder = here::here("junk"),
+  # thin_number = 500,
+  file_name = "test_paca_axes1-8.png"
+)
