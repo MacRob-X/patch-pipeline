@@ -177,6 +177,13 @@ taxo_iucn <- taxo %>%
     iucn, by = join_by("TipLabel" == "species")
   )
 
+# set up contingency table for chisq test
+cont_table <- data.frame(
+  n_data = rep(NA, 5),
+  n_missing = rep(NA, 5)
+)
+rownames(cont_table) <- c("CR", "EN", "VU", "NT", "LC")
+
 # filter to each IUCN category and print percentage coverage
 for(category in c("CR", "EN", "VU", "NT", "LC")){
   
@@ -194,6 +201,15 @@ for(category in c("CR", "EN", "VU", "NT", "LC")){
   
   pc_cov <- (n_px / n_taxo) * 100
   
+  cont_table[category, ] <- c(n_px, (n_taxo - n_px))
+  
   print(paste0("Species coverage = ", round(pc_cov, digits = 1), "% for IUCN category ", category))
   
 }
+
+# run chi square test to check if % coverage is significantly different among the
+# IUCN categories
+chisq.test(cont_table)
+
+# pairwise comparisons (with Bonferroni adjustment)
+pairwise.prop.test(cont_table[,1], rowSums(cont_table), p.adjust.method = "bonferroni")
