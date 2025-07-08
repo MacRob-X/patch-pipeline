@@ -8,10 +8,17 @@ library(motmot)
 library(ape)
 library(geomorph)
 
-## EDITABLE CODE ##
+## EDITABLE CODE ## ----
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Passeriformes"
-# select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
+clade <- "Neoaves"
+# select whether to use matched sex data (""all" or "matchedsex")
+# "matchedsex" will use diversity metrics calculated on a subset of data containing only species
+# for which we have both a male and female specimen (and excluding specimens of unknown sex)
+sex_match <- "matchedsex"
+# select sex of interest ("all", "male_female", "male_only", "female_only", "unknown_only")
+sex_interest <- "male_female"
+# Choose space to work with (usmldbl, usmldblr, xyz, xyzlum, xyzlumr, lab, cie, sRGB, hex, 
+# jndxyz, jndxyzlum, jndxyzlumr)
 space <- "lab"
 # select sex of interest ("M" or "F")
 sex <- "M"
@@ -34,20 +41,20 @@ get_spp_sex <- function(div_data){
 
 # Load and prepare data ----
 
-# load phylogeny (full trees 0001 to 1000, Hackett backbone - from birdtree.org)
-hackettTrees <- read.tree("./4_SharedInputData/AllBirdsHackett1.tre")
-
-# trim to first 100 trees (0001 to 0100)
-phy <- hackettTrees[1:100]
-
-# save first 100 trees
-write.tree(phy, file = "./4_SharedInputData/First100_AllBirdsHackett1.tre")
+# # load phylogeny (full trees 0001 to 1000, Hackett backbone - from birdtree.org)
+# hackettTrees <- read.tree("./4_SharedInputData/AllBirdsHackett1.tre")
+# 
+# # trim to first 100 trees (0001 to 0100)
+# phy <- hackettTrees[1:100]
+# 
+# # save first 100 trees
+# write.tree(phy, file = "./4_SharedInputData/First100_AllBirdsHackett1.tre")
 
 # load first 100 trees
 phy <- read.tree("./4_SharedInputData/First100_AllBirdsHackett1.tre")
 
 # load PCA patch data 
-pca_filename <- paste(clade, "patches.231030.PCAcolspaces.rds", sep = ".")
+pca_filename <- paste(clade, sex_match,  "patches.231030.PCAcolspaces.rds", sep = ".")
 pcaAll <- readRDS(paste0("./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/", pca_filename))[[space]]
 
 # add species name and sex as columns in pca data
@@ -72,7 +79,6 @@ pcaDat <- subset(pcaDat, select = -c(sex, species))
 # estimate pagel's lambda (phylogenetic signal) for each PC
 
 # dummy variable 1
-lambda.col <- rep(list(transformPhylo.ML(phy = phy[[1]], y = as.matrix(pcaDat[, 1]), model = "lambda")), times = length(phy))
 lambda.col <- vector("list", length = length(phy))
 # dummy variable 2
 lambda.ml <- rep(list(lambda.col), times = ncol(pcaDat))
@@ -98,28 +104,31 @@ saveRDS(lambda.ml, file = "./Outputs/patch.M.jndxyzlumrPCA.lambdaML.rds")
 
 library(parallel)
 
-# Set up a cluster using the number of cores (4 less than total number of laptop cores)
-no_cores <- detectCores() - 4
-cl <- makeCluster(no_cores)
-
-# Export the variables and functions needed by the workers
-clusterExport(cl, varlist = c("phy", "pcaDat", "transformPhylo.ML"))
-
 # Define the function to calculate lambda for a given PC axis across each phylogenetic tree in distribution
 calc_lambda <- function(col, data, tree_distrib) {
   traitData <- as.matrix(data[, col])
   rownames(traitData) <- rownames(data)
-  parLapply(cl, 1:length(tree_distrib), function(j) {
+  parallel::parLapply(cl, 1:length(tree_distrib), function(j) {
     cat("\rProcessing tree", j, "for PC axis", col)
     transformPhylo.ML(phy = tree_distrib[[j]], y = traitData, model = "lambda")
   })
 }
 
-# dummy variable for storing results
-lambda.ml <- vector("list", length = ncol(pcaDat))
+# Set up a cluster using the number of cores (4 less than total number of laptop cores)
+no_cores <- detectCores() - 4
+cl <- makeCluster(no_cores)
+
+# Export the variables and functions needed by the workers
+clusterExport(cl, varlist = c("phy", "pcaDat", "transformPhylo.ML", "calc_lambda"))
 
 # Apply the function across all PC axes
-lambda.ml <- apply(as.matrix(pcaDat), 2, calc_lambda)
+lambda.ml <- lapply(
+  colnames(pcaDat),
+  calc_lambda,
+  data = pcaDat, tree_distrib = phy
+)
+# or do as for loop, which allows displaying which PC it's up to
+lambda.ml <- vector("list", length = ncol(pcaDat))
 for(i in 1:ncol(pcaDat)) {
   print(paste("Processing PC axis", i))
   lambda.ml[[i]] <- calc_lambda(i, pcaDat, phy)
@@ -129,11 +138,18 @@ for(i in 1:ncol(pcaDat)) {
 stopCluster(cl)
 
 # save
-saveRDS(lambda.ml, file = paste("./2_Patches/3_OutputData/3_Phylogenetic_signal/patch", sex, space, "lambdaML.rds", sep = "."))
+lambda_filepath <- here::here(
+  "2_Patches", "3_OutputData", "3_Phylogenetic_signal", space
+)
+if(!dir.exists(lambda_filepath)){
+  dir.create(lambda_filepath, recursive = TRUE)
+}
+lambda_filename <- paste("pagelsLambda", sex, "hackettTrees10.rds", sep = ".")
+saveRDS(lambda.ml, file = paste(lambda_filepath, lambda_filename, sep = "/"))
 
 
 # Load pagel's lambda for each PC
-lambda.ml <- readRDS("./2_Patches/3_OutputData/3_Phylogenetic_signal/patch.M.jndxyzlumrPCA.lambdaML.rds")
+lambda.ml <- readRDS(paste(lambda_filepath, lambda_filename, sep = "/"))
 
 # calculate mean lambda and 95% CIs for each PC (i.e. average over the tree distribution)
 lambda.ml.means <- vector("list", length = ncol(pcaDat))
@@ -160,14 +176,14 @@ for(i in 1:ncol(pcaDat)){
 
 
 # plot lambda plus CIs for each PC
-lambda.ml.means.df <- data.frame(PC = c(1:40))
-for(i in 1:length(lambda.ml.means.df$mean)){
+lambda.ml.means.df <- data.frame(PC = 1:ncol(pcaDat))
+for(i in 1:ncol(pcaDat)){
   lambda.ml.means.df$mean[i] <- lambda.ml.means[[i]]$grandMean
   lambda.ml.means.df$lowerCI[i] <- lambda.ml.means[[i]]$CIs[[1]]
   lambda.ml.means.df$upperCI[i] <- lambda.ml.means[[i]]$CIs[[2]]
 }
 plot(mean ~ PC, data = lambda.ml.means.df,
-     xlab = "PC", ylab = "Mean Lambda across 100 trees",
+     xlab = "PC", ylab = "Mean Lambda across 10 trees",
      ylim = c(0, 1))
 arrows(x0 = lambda.ml.means.df$PC,
        y0 = lambda.ml.means.df$lowerCI, 
@@ -180,7 +196,7 @@ screeplot(pcaAll)
 
 # check whether male or female data contains higher phylogenetic signal for each PC axis
 lambda.ml.means.M$mean - lambda.ml.means.F$mean
-# looks like generally more signal in male data but it's very close (except for PC 17)
+# looks like generally more signal in male data but it's very close (except for PC 26/27)
 
 
 
@@ -188,10 +204,153 @@ lambda.ml.means.M$mean - lambda.ml.means.F$mean
 # Plot overall phylogenetic signal for all PCs
 # using generalised Blomberg's K for multidimensional data (Adams, 2014)
 
-# Matrix version of PCA
-pcaDat <- as.matrix(pcaDat)
+# first generate majority-rule consensus tree from all Hackett trees
+phy_all <- read.tree("./4_SharedInputData/AllBirdsHackett1.tre")
+# MRC tree is the recommended type of consensus tree
+# See https://doi.org/10.1093/czoolo/61.6.959
+
+cons_tree <- ape::consensus(phy_all, p = 0.5, rooted = TRUE)
+
+# save
+ape::write.tree(cons_tree, file= here::here("4_SharedInputData", "AllBirdsHackett1_majrule_consensustree.txt"))
+
+# toy data to test
+smallDat <- pcaDat[sample(1:nrow(pcaDat), 1000, replace = FALSE), 30, drop = FALSE]
+smallPhy <- drop.tip(phy[[1]], tip = setdiff(phy[[1]]$tip.label, get_spp_sex(smallDat)[, "species"]))
 
 # Note that the following takes a loooooong time to run (> 24 hours on a high spec laptop)
-kMult <- physignal(A = pcaDat, phy = phy[[1]])
+kMult <- geomorph::physignal(A = as.matrix(smallDat), phy = smallPhy, iter = 999, print.progress = TRUE)
 
-saveRDS(kMult, file = "./Outputs/patch.M.jndxyzlumrPCA.kMult.rds")
+# full dataset
+kMult <- geomorph::physignal(A = as.matrix(pcaDat), phy = phy[[1]], iter = 999, print.progress = TRUE)
+
+print(kMult)
+plot(kMult)
+
+kmult_filepath <- here::here(
+  "2_Patches", "3_OutputData", "3_Phylogenetic_signal", space
+)
+if(!dir.exists(kmult_filepath)){
+  dir.create(kmult_filepath, recursive = TRUE)
+}
+kmult_filename <- paste("kMult", sex, "hackettTrees1.rds", sep = ".")
+saveRDS(kMult, file = paste(kmult_filepath, kmult_filename, sep = "/"))
+
+
+# Try using multivariate Pagel's Lambda, implemented in motmot
+# https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.13343
+
+
+# Calculate Phylogenetic Autocorrelation Function (ACF) with castor package ----
+# https://squidlobster.r-universe.dev/castor/doc/manual.html#get_trait_acf
+# castor is specifically designed to work fast with big trees https://doi.org/10.1093/bioinformatics/btx701
+
+# calculate ACF for each PC
+
+# check the tips of the tree match the data
+identical(rownames(pcaDat), phy[[1]]$tip.label)
+
+# check the tip order is identical in all trees
+identicalValue <- function(x,y) if (identical(x,y)) x else FALSE
+check_vals <- lapply(phy, "[[", 4)
+Reduce(identicalValue, check_vals) %>% 
+  isFALSE() %>% 
+  any()
+# order of tips is identical in all trees, so only need to match once
+
+# they don't match - reorder the data to match
+pcaDat <- pcaDat[match(phy[[1]]$tip.label, rownames(pcaDat)), ]
+identical(rownames(pcaDat), phy[[1]]$tip.label)
+
+
+library(parallel)
+library(castor)
+
+# Define the function to calculate ACF for a given PC axis across each phylogenetic tree in distribution
+calc_acf <- function(col, data, tree_distrib, parallelise = FALSE) {
+  traitData <- data[, col]
+  names(traitData) <- rownames(data)
+  n_trees <- length(tree_distrib)
+  if(parallelise == TRUE){
+    parallel::parLapply(cl, 1:n_trees, function(tree_num) {
+      cat("\rProcessing tree", tree_num, "for PC axis", col)
+      return(get_trait_acf(tree = tree_distrib[[tree_num]], tip_states = traitData))
+    })
+  } else {
+    lapply(1:n_trees, function(tree_num){
+      cat("\rProcessing tree", tree_num, "for PC axis", col)
+      return(get_trait_acf(tree = tree_distrib[[tree_num]], tip_states = traitData))
+    }
+    )
+  }
+  
+}
+
+
+# apply across each tree for each axis in a for loop, which allows displaying which PC it's up to
+acf <- vector("list", length = ncol(pcaDat))
+for(i in 1:ncol(pcaDat)) {
+  print(paste("Processing PC axis", i))
+  acf[[i]] <- calc_acf(i, pcaDat, phy, parallelise = FALSE)
+}
+
+names(acf) <- colnames(pcaDat)
+
+
+# transform results from lists to df
+
+# Create all combinations of PC and tree
+pc_tree_combs <- expand.grid(
+  pc = 1:30,
+  tree = 1:100,
+  stringsAsFactors = FALSE
+)
+
+acf_df <- purrr::pmap_dfr(pc_tree_combs, function(pc, tree) {
+  pc_name <- paste0("PC", pc)
+  
+  # check if successful acf calculation for sub-element
+  if (!is.null(acf[[pc_name]][[tree]]) && acf[[pc_name]][[tree]]$success) {
+    
+    # create dataframe populated with PC/tree combination values if successful
+    data.frame(
+      phylodist = acf[[pc_name]][[tree]]$phylodistances,
+      autocorr = acf[[pc_name]][[tree]]$autocorrelations,
+      axis = pc_name,
+      tree = tree,
+      stringsAsFactors = FALSE
+    )
+    
+  } else {
+    
+    # return empty dataframe if unsuccessful or missing
+    data.frame(
+      phylodist = numeric(0),
+      autocorr = numeric(0),
+      axis = character(0),
+      tree = integer(0),
+      stringsAsFactors = FALSE
+    )
+    
+  }
+})
+
+
+library(ggplot2)
+library(dplyr)
+
+# plot values for a given tree
+acf_df %>%
+  filter(tree == 1) %>% 
+  ggplot(aes(x = phylodist, y = autocorr)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", formula = y ~ x) + 
+  facet_wrap(~ axis)
+
+# plot all values (across trees) for a given axis
+acf_df %>%
+  filter(axis == "PC2") %>% 
+  ggplot(aes(x = phylodist, y = autocorr)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", formula = y ~ x) + 
+  facet_wrap(~ tree)
