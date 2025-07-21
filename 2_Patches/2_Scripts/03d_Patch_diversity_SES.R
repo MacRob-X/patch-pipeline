@@ -59,7 +59,7 @@ iucn_type <- "nominate"
 # Load data ----
 
 # load patch data (PCA of whichever colourspace - generated in 02_Patch_Analyse_features.R)
-pca_filename <- paste(clade, sex_match,  "patches.231030.PCAcolspaces", "rds", sep = ".")
+pca_filename <- paste(clade, sex_match,  "patches.250716.PCAcolspaces", "rds", sep = ".")
 pca_all <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",

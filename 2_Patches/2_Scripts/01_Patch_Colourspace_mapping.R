@@ -134,11 +134,11 @@ jnd2xyz.crc <- function (coldistres, center = TRUE, rotate = TRUE, rotcenter = c
 taxo <- read.csv("./4_SharedInputData/BLIOCPhyloMasterTax_2019_10_28.csv", strings = F)
 
 # load patch pixel values (vRGB; uRGB)
-px_master <- readRDS("./2_Patches/1_InputData/patches.231030.rds")
+px_master <- readRDS("./2_Patches/1_InputData/patches.250716.rds")
 
 # Choose whether to examine all Neoaves or passerines only
 # "neoaves" or "passerines"
-group <- "passerines"
+group <- "neoaves"
 
 if(group == "neoaves"){
   # remove any galloanseriformes or palaeognaths
@@ -148,10 +148,18 @@ if(group == "neoaves"){
       by = dplyr::join_by(species == TipLabel)
     ) |>
     dplyr::filter(
-      IOCOrder != "GALLIFORMES"
+      IOCOrder != "STRUTHIONIFORMES", 
+      IOCOrder != "RHEIFORMES", 
+      IOCOrder != "CASUARIIFORMES", 
+      IOCOrder != "APTERYGIFORMES", 
+      IOCOrder != "TINAMIFORMES", 
+      IOCOrder != "GALLIFORMES", 
+      IOCOrder != "ANSERIFORMES"
     ) |>
     dplyr::select(
-      species, specimen, sex, view, region, coord.x, coord.y, vR, vG, vB, uR, uG, uB, min.r2
+      species, specimen, sex, view, region, coord.x, coord.y, vR, vG, vB, uR, uG,
+      # min.r2,
+      uB
     )
 } else if(group == "passerines"){
   # remove any non-passerines
@@ -356,7 +364,13 @@ for (i in 1:nrow(px)) {
 
 
 # save
-saveRDS(px, "./2_Patches/3_OutputData/1_RawColourspaces/Passeriformes.patches.231030.rawcolspaces.rds")
+data_filename <- paste(group, "patches.250716.rawcolspaces.rds")
+saveRDS(px, 
+        here::here(
+          "2_Patches", "3_OutputData", "1_RawColourspaces",
+          data_filename
+        )
+        )
 
 
 

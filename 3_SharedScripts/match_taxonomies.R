@@ -24,10 +24,10 @@ iucn_data <- iucn_master %>%
   filter(
     class_name == "AVES",
     order_name != "STRUTHIONIFORMES", 
- #   IOCOrder != "RHEIFORMES", 
-#    IOCOrder != "CASUARIIFORMES", 
-#    IOCOrder != "APTERYGIFORMES", 
-#    IOCOrder != "TINAMIFORMES", 
+    order_name != "RHEIFORMES", 
+    order_name != "CASUARIIFORMES", 
+    order_name != "APTERYGIFORMES", 
+    order_name != "TINAMIFORMES", 
     order_name != "GALLIFORMES", 
     order_name != "ANSERIFORMES"
   ) %>% 
@@ -38,7 +38,7 @@ iucn_data <- iucn_master %>%
 # load raw patch pixel values,
 patch_master <- readr::read_rds(
   here::here(
-    "2_Patches", "1_InputData", "patches.231030.rds"
+    "2_Patches", "1_InputData", "patches.250716.rds"
   )
 )
 
@@ -51,17 +51,24 @@ taxo_master <- read.csv(
 
 
 
-# remove gallanseriformes from patch pixel values
+# remove non-neoaves from patch pixel values
 patch_data <- patch_master %>% 
   left_join(
     taxo_master,
     by = join_by(species == TipLabel)
   )  %>% 
   filter(
-    IOCOrder != "GALLIFORMES"
+    IOCOrder != "STRUTHIONIFORMES", 
+    IOCOrder != "RHEIFORMES", 
+    IOCOrder != "CASUARIIFORMES", 
+    IOCOrder != "APTERYGIFORMES", 
+    IOCOrder != "TINAMIFORMES", 
+    IOCOrder != "GALLIFORMES", 
+    IOCOrder != "ANSERIFORMES"
   ) %>%
   select(
-    species, specimen, sex, view, region, coord.x, coord.y, vR, vG, vB, uR, uG, uB, min.r2
+    species, specimen, sex, view, region, coord.x, coord.y, vR, vG, vB, uR, uG, uB
+    # , min.r2
   )
 
 # extract patch species names
@@ -99,6 +106,8 @@ avonet_crosswalk <- read.csv(
 # # There are 4 species in the BT taxonomy that are marked as "invalid taxon" and don't have 
 # a BL taxonomy name. These are Anthus_longicaudatus, Hypositta_perdita, Lophura_hatinhensis, 
 # and Phyllastrephus_leucolepis. None of these species are in the patch data, so we can remove them
+# UPDATE 2025-07-18 - these species are still not present in the 250716 patch data,so we can continue
+# to filter them out
 # There are also 143 extinct species which have no BT name. Keep these in, as we may get data on 
 # extinct species in the future
 avonet_crosswalk <- avonet_crosswalk %>% 
@@ -330,6 +339,48 @@ avonet_iucn <- avonet_iucn %>%
   filter(
     species_birdtree %in% patch_names
   )
+
+# UPDATE 2025-07-18 ------------------------------------#
+# Get the (Neoaves) species for which we have new data
+old_patch_data <- readr::read_rds(
+  here::here(
+    "2_Patches", "1_InputData", "patches.231030.rds"
+  )
+) %>% 
+  left_join(
+    taxo_master,
+    by = join_by(species == TipLabel)
+  )  %>% 
+  filter(
+    IOCOrder != "STRUTHIONIFORMES", 
+    IOCOrder != "RHEIFORMES", 
+    IOCOrder != "CASUARIIFORMES", 
+    IOCOrder != "APTERYGIFORMES", 
+    IOCOrder != "TINAMIFORMES", 
+    IOCOrder != "GALLIFORMES", 
+    IOCOrder != "ANSERIFORMES"
+  ) %>%
+  select(
+    species, specimen, sex, view, region, coord.x, coord.y, vR, vG, vB, uR, uG, uB
+    # , min.r2
+  )
+
+# get unique species names
+old_patch_names <- unique(old_patch_data$species)
+
+# get species which are in new data but not in old data
+new_species <- patch_names[!(patch_names %in% old_patch_names)]
+
+# assign new variable for the full avonet_iucn
+old_avonet_iucn <- avonet_iucn
+ 
+# filter avonet_iucn to only these species with new patch data
+avonet_iucn <- old_avonet_iucn %>% 
+  filter(
+    species_birdtree %in% new_species
+  )
+ 
+# END UPDATE 2025-18-07 ---------------------------------------------#
 
 # Check for rows which are NA for initial category (these are rows for which we potentially
 # don't have IUCN data)
@@ -743,12 +794,21 @@ iucn_2024_conservative <- avonet_iucn_conservative %>%
     iucn_cat = final_category
   )
 
+# FOR THE ORIGINAL (231030) PATCH DATA ONLY
 iucn_2024_conservative %>%
   readr::write_csv(
     file = here::here(
     "4_SharedInputData", "iucn_2024_conservative.csv"
   ),
     col_names = TRUE
+  )
+# FOR THE NEW (250716) PATCH DATA ONLY - we will just append the new rows
+iucn_2024_conservative %>%
+  readr::write_csv(
+    file = here::here(
+      "4_SharedInputData", "iucn_2024_conservative.csv"
+    ),
+    append = TRUE
   )
 
 iucn_2024_liberal <- avonet_iucn_liberal %>% 
@@ -759,12 +819,21 @@ iucn_2024_liberal <- avonet_iucn_liberal %>%
     iucn_cat = final_category
   )
 
+# FOR THE ORIGINAL (231030) PATCH DATA ONLY
 iucn_2024_liberal %>%
   readr::write_csv(
     file = here::here(
       "4_SharedInputData", "iucn_2024_liberal.csv"
     ),
     col_names = TRUE
+  )
+# FOR THE NEW (250716) PATCH DATA ONLY - we will just append the new rows
+iucn_2024_liberal %>%
+  readr::write_csv(
+    file = here::here(
+      "4_SharedInputData", "iucn_2024_liberal.csv"
+    ),
+    append = TRUE
   )
 
 iucn_2024_nominate <- avonet_iucn_nominate %>% 
@@ -775,10 +844,19 @@ iucn_2024_nominate <- avonet_iucn_nominate %>%
     iucn_cat = final_category
   )
 
+# FOR THE ORIGINAL (231030) PATCH DATA ONLY
 iucn_2024_nominate %>%
   readr::write_csv(
     file = here::here(
       "4_SharedInputData", "iucn_2024_nominate.csv"
     ),
     col_names = TRUE
+  )
+# FOR THE NEW (250716) PATCH DATA ONLY - we will just append the new rows
+iucn_2024_nominate %>%
+  readr::write_csv(
+    file = here::here(
+      "4_SharedInputData", "iucn_2024_nominate.csv"
+    ),
+    append = TRUE
   )

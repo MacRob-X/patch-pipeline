@@ -23,7 +23,7 @@ space <- "lab"
 # Restrict to only species for which we have male and female data?
 mf_restrict <- TRUE
 # select UMAP parameters
-nn <- "default"
+nn <- 25
 min_dist <- "default"
 ## END EDITABLE CODE
 
@@ -36,7 +36,7 @@ if(mf_restrict == TRUE){
 
 # load patch data (PCA of whichever colourspace - generated in 02_Patch_Analyse_features.R)
 # set filename
-pca_filename <- paste(clade, spec_sex, "patches.231030.PCAcolspaces.rds", sep = ".")
+pca_filename <- paste(clade, spec_sex, "patches.250716.PCAcolspaces.rds", sep = ".")
 pca_all <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
@@ -51,6 +51,32 @@ taxo <- read.csv(
    )
 )
 
+
+#-------------------------------------------------------------------------------------------------#
+# UMAP with custom settings
+
+# set parameters
+custom_config <- umap::umap.defaults
+if(nn != "default"){
+  custom_config$n_neighbors <- nn
+}
+if(min_dist != "default"){
+  custom_config$min_dist <- min_dist
+}
+
+# set seed (for reproducibiliity)
+set.seed(42)
+# perform UMAP
+custom_umap <- umap::umap(pca_all$x, config = custom_config)
+
+# save
+umap_filename <- paste(clade, spec_sex, "patches", "nn", custom_config$n_neighbors, "mindist", custom_config$min_dist, space, "UMAP", "rds", sep = ".")
+saveRDS(custom_umap, 
+        file = here::here(
+          "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP", 
+          umap_filename
+        )
+)
 
 #-------------------------------------------------------------------------------------------------#
 

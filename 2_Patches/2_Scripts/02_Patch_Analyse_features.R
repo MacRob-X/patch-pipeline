@@ -16,13 +16,13 @@ source("./2_Patches/2_Scripts/R/patch_plotting.R")
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Passeriformes"
+clade <- "Neoaves"
 # Restrict to only species for which we have male and female data?
 mf_restrict <- TRUE
 
 # Input data ----
 # (this is the output from 01_Patch_Colourspace_mapping_vX.R)
-px_filename <- paste0(clade, ".patches.231030.rawcolspaces.rds")
+px_filename <- paste0(clade, ".patches.250716.rawcolspaces.rds")
 px <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "1_RawColourSpaces", 
@@ -103,9 +103,9 @@ non_PCA_colourspaces$xyzlumr <- dat[complete.cases(dat),-c(1:2)]
 
 # set filename
 if(mf_restrict == TRUE){
-  prepca_filename <- paste(clade, "matchedsex", "patches.231030.prePCAcolspaces.rds", sep = ".")
+  prepca_filename <- paste(clade, "matchedsex", "patches.250716.prePCAcolspaces.rds", sep = ".")
 } else{
-  prepca_filename <- paste(clade, "allspecimens", "patches.231030.prePCAcolspaces.rds", sep = ".")
+  prepca_filename <- paste(clade, "allspecimens", "patches.250716.prePCAcolspaces.rds", sep = ".")
 }
 
 
@@ -121,9 +121,9 @@ saveRDS(
 
 # set filename
 if(mf_restrict == TRUE){
-  prepca_filename <- paste(clade, "matchedsex", "patches.231030.prePCAcolspaces.rds", sep = ".")
+  prepca_filename <- paste(clade, "matchedsex", "patches.250716.prePCAcolspaces.rds", sep = ".")
 } else{
-  prepca_filename <- paste(clade, "allspecimens", "patches.231030.prePCAcolspaces.rds", sep = ".")
+  prepca_filename <- paste(clade, "allspecimens", "patches.250716.prePCAcolspaces.rds", sep = ".")
 }
 
 # reload the raw colour spaces (if necessary)
@@ -144,9 +144,9 @@ names(pca_spaces) <- spaces
 
 # set filename
 if(mf_restrict == TRUE){
-  pca_filename <- paste(clade, "matchedsex", "patches.231030.PCAcolspaces.rds", sep = ".")
+  pca_filename <- paste(clade, "matchedsex", "patches.250716.PCAcolspaces.rds", sep = ".")
 } else{
-  pca_filename <- paste(clade, "allspecimens", "patches.231030.PCAcolspaces.rds", sep = ".")
+  pca_filename <- paste(clade, "allspecimens", "patches.250716.PCAcolspaces.rds", sep = ".")
 }
 
 # save
@@ -164,7 +164,7 @@ saveRDS(
 # with both sets and check that qualitatively the results are unchanged
 
 # reload PCA (if necessary)
-pca_spaces <- readRDS("./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Passeriformes.patches.231030.PCAcolspaces.rds")
+pca_spaces <- readRDS("./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Passeriformes.patches.250716.PCAcolspaces.rds")
 
 # plot the first two PCs (just for initial inspection - main visualisation below)
 plot(pca_spaces[["lab"]]$x)
@@ -369,7 +369,7 @@ text(umap.jndxyzlumr$layout[,1],
 # Based on https://stats.stackexchange.com/questions/229092/how-to-reverse-pca-and-reconstruct-original-variables-from-several-principal-com
 
 # get original data
-px <- readRDS("./Outputs/features/patches/Passeriformes.patches.231030.processed.240322.rds")
+px <- readRDS("./Outputs/features/patches/Passeriformes.patches.250716.processed.240322.rds")
 
 cps.jndxyzlumr <- data.frame(px$x.jndlumr, px$y.jndlumr, px$z.jndlumr, px$lum.jndlumr, 
                              row.names = paste(px$species, px$sex, sep = "-"))

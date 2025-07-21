@@ -14,15 +14,19 @@ library(ggplot2)
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Passeriformes"
+clade <- "Neoaves"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr", etc.)
 space <- "lab"
+# restrict to only species with male and female data? ("matchedsex" or "allspecimens")
+sex_match <- "matchedsex"
+# Overwrite previous colour grids in write folder?
+overwrite_grids <- FALSE
 
 # load rgb data ----
 srgb_dat <- readr::read_rds(
   here::here(
     "2_Patches", "3_OutputData", "1_RawColourspaces", 
-    paste0(clade, ".patches.231030.prePCAcolspaces.rds")
+    paste0(clade, ".", sex_match, ".patches.250716.prePCAcolspaces.rds")
   )
 ) %>% 
   magrittr::extract2("sRGB")
@@ -31,7 +35,7 @@ srgb_dat <- readr::read_rds(
 raw_patch_tcs <- readr::read_rds(
   here::here(
     "2_Patches", "3_OutputData", "1_RawColourspaces", 
-    paste0(clade, ".patches.231030.prePCAcolspaces.rds")
+    paste0(clade, ".", sex_match, ".patches.250716.prePCAcolspaces.rds")
   )
 ) %>% 
   magrittr::extract2("xyz")
@@ -40,7 +44,7 @@ raw_patch_tcs <- readr::read_rds(
 pca_all <- readr::read_rds(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA", 
-    paste0(clade, ".patches.231030.PCAcolspaces.rds")
+    paste0(clade, ".", sex_match, ".patches.250716.PCAcolspaces.rds")
   )
 ) %>% 
   magrittr::extract2(space)
@@ -156,6 +160,17 @@ for(i in 1:length(srgb_dat$species)){
       sex == srgb_dat[i, "sex"]
     ) %>% 
     arrange(body_part)  # this determines the position of each body part in the grid
+  
+  # if not overwriting previous colour grids, check if there's already a colour grid in the folder
+  if(overwrite_grids == FALSE){
+    
+    # check if grid already exists
+    if(file.exists(paste0("C:/Users/bop23rxm/Documents/colour_grids_repositioned/", specimen, ".png"))){
+      # skip to next iteration if there's already a grid for this specimen
+      next
+    }
+    
+  }
   
   # initialise png saving
   png(
