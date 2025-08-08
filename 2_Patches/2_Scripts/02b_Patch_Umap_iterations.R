@@ -12,10 +12,17 @@ source(
     "2_Patches", "2_Scripts", "R", "patch_plotting.r"
   )
 )
+source(
+  here::here(
+    "2_Patches", "2_Scripts", "R", "plotting.r"
+  )
+)
+
+library(dplyr)
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Neoaves"
+clade <- "Neognaths"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
@@ -76,6 +83,38 @@ saveRDS(custom_umap,
           "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP", 
           umap_filename
         )
+)
+
+# plot the custom UMAP
+custom_umap <- readRDS(here::here(
+  "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP", 
+  umap_filename
+))
+save_path <- here::here(
+  "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", space,
+  paste(clade, spec_sex, "all", "patches_UMAPnn25mindist0.1.png", sep = "_")
+)
+grid_path <- grid_path <- "C:/Users/bop23rxm/Documents/colour_grids_repositioned"
+plot_patch_grids(umap_obj = custom_umap, 
+                 colour_grid_path = grid_path,
+                 asp_ratio = "wrap",
+                 save_as = "png",
+                 save_path = save_path)
+# plot first 6 PC axes and the custom UMAP
+folder_path <- here::here(
+  "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", space
+)
+filename <- paste(clade, spec_sex, "all", "patches_UMAP_PC1-PC6.png", sep = "_")
+plot_four_cg(
+  pca_all, "PC1", "PC2",
+  pca_all, "PC3", "PC4",
+  pca_all, "PC5", "PC6",
+  custom_umap, "UMAP1", "UMAP2",
+  cg_path = grid_path,
+  save_type = "png",
+  write_folder = folder_path,
+  # thin_number = 500,
+  file_name = filename
 )
 
 #-------------------------------------------------------------------------------------------------#

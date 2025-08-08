@@ -137,10 +137,29 @@ taxo <- read.csv("./4_SharedInputData/BLIOCPhyloMasterTax_2019_10_28.csv", strin
 px_master <- readRDS("./2_Patches/1_InputData/patches.250716.rds")
 
 # Choose whether to examine all Neoaves or passerines only
-# "neoaves" or "passerines"
-group <- "neoaves"
+# "neognaths", "neoaves" or "passerines"
+group <- "neognaths"
 
-if(group == "neoaves"){
+if(group == "neognaths"){
+  # remove any galloanseriformes or palaeognaths
+  px <- px_master |> 
+    dplyr::left_join(
+      taxo,
+      by = dplyr::join_by(species == TipLabel)
+    ) |>
+    dplyr::filter(
+      IOCOrder != "STRUTHIONIFORMES", 
+      IOCOrder != "RHEIFORMES", 
+      IOCOrder != "CASUARIIFORMES", 
+      IOCOrder != "APTERYGIFORMES", 
+      IOCOrder != "TINAMIFORMES"
+    ) |>
+    dplyr::select(
+      species, specimen, sex, view, region, coord.x, coord.y, vR, vG, vB, uR, uG,
+      # min.r2,
+      uB
+    )
+} else if(group == "neoaves"){
   # remove any galloanseriformes or palaeognaths
   px <- px_master |> 
     dplyr::left_join(
@@ -295,20 +314,55 @@ anchor_dat <- data.frame(u=c(1,0,0,0), s=c(0,1,0,0), m=c(0,0,1,0), l=c(0,0,0,1),
 anchor_dat[anchor_dat==0] <- 0.000001
 anchor_dat[,c("u","s","m","l")] <- anchor_dat[,c("u","s","m","l")] / rowSums(anchor_dat[,c("u","s","m","l")])
 
-for (i in 1:nrow(px)) {
+# for (i in 1:nrow(px)) {
+#   
+#   cat(paste(i, "\r"))
+#   fpx <- px[i, c("u","s","m","l","dbl"), drop=F]
+#   fpx <- rbind(anchor_dat, fpx)
+#   fpx[fpx==0] <- 0.000001
+#   cd <- suppressMessages({ coldist(fpx, achromatic = T, qcatch = "Qi") })
+#   cd[cd==0] <- 0.000001
+#   jnd <- jnd2xyz.crc(cd, center = F, rotate = F)
+#   px[i,c("x.jnd","y.jnd","z.jnd","lum.jnd")] <- jnd[-(1:nrow(anchor_dat)),]
+#   
+# }
+
+# parallelised version
+library(parallel)
+library(pbapply) # for progress bar
+# define function to apply across each pixel row
+calc_row <- function(row_num){
   
-  cat(paste(i, "\r"))
-  fpx <- px[i, c("u","s","m","l","dbl"), drop=F]
+  fpx <- px[row_num, c("u","s","m","l","dbl"), drop=F]
   fpx <- rbind(anchor_dat, fpx)
   fpx[fpx==0] <- 0.000001
   cd <- suppressMessages({ coldist(fpx, achromatic = T, qcatch = "Qi") })
   cd[cd==0] <- 0.000001
   jnd <- jnd2xyz.crc(cd, center = F, rotate = F)
-  px[i,c("x.jnd","y.jnd","z.jnd","lum.jnd")] <- jnd[-(1:nrow(anchor_dat)),]
-  
+  jnds <- jnd[-(1:nrow(anchor_dat)),]
+  names(jnds) <- c("x.jnd","y.jnd","z.jnd","lum.jnd")
+  return(jnds)
 }
 
+# Set up a cluster using the number of cores (4 less than total number of laptop cores)
+no_cores <- detectCores() - 4
+cl <- makeCluster(no_cores)
 
+# Export the variables and functions needed by the workers
+clusterExport(cl, varlist = c("px", "anchor_dat", "jnd2xyz.crc", "coldist", "coldist2mat"))
+
+# apply the function over the rows of px
+list_jnds <- pblapply(
+  cl = cl,
+  1:nrow(px),
+  calc_row
+)
+stopCluster(cl)
+
+jnds_mat <- do.call(rbind, list_jnds)
+
+# add to px
+px[, c("x.jnd","y.jnd","z.jnd","lum.jnd")] <- jnds_mat
 
 # map - JNDxyzlumr 
 # converts the relative cone catch values to JNDs (allowing for simulataneous analysis and comparison of chromatic and
@@ -347,24 +401,58 @@ anchor_dat <- data.frame(u=c(1,0,0,0), s=c(0,1,0,0), m=c(0,0,1,0), l=c(0,0,0,1),
 anchor_dat[anchor_dat==0] <- 0.000001
 anchor_dat[,c("u","s","m","l")] <- anchor_dat[,c("u","s","m","l")] / rowSums(anchor_dat[,c("u","s","m","l")])
 
-for (i in 1:nrow(px)) {
+# for (i in 1:nrow(px)) {
+#   
+#   cat(paste(i, "\r"))
+#   fpx <- px[i, c("u","s","m","l","dbl.scaled"), drop=F]
+#   fpx <- rbind(anchor_dat, fpx)
+#   fpx[fpx==0] <- 0.000001
+#   cd <- suppressMessages({ coldist(fpx, achromatic = T, qcatch = "Qi") })
+#   cd[cd==0] <- 0.000001
+#   jnd <- jnd2xyz.crc(cd, center = F, rotate = F)
+#   px[i,c("x.jndlumr","y.jndlumr","z.jndlumr","lum.jndlumr")] <- jnd[-(1:nrow(anchor_dat)),]
+#   
+# }
+
+# parallelised version
+# define function to apply across each pixel row
+calc_row_scaledlum <- function(row_num){
   
-  cat(paste(i, "\r"))
-  fpx <- px[i, c("u","s","m","l","dbl.scaled"), drop=F]
+  fpx <- px[row_num, c("u","s","m","l","dbl.scaled"), drop=F]
   fpx <- rbind(anchor_dat, fpx)
   fpx[fpx==0] <- 0.000001
   cd <- suppressMessages({ coldist(fpx, achromatic = T, qcatch = "Qi") })
   cd[cd==0] <- 0.000001
   jnd <- jnd2xyz.crc(cd, center = F, rotate = F)
-  px[i,c("x.jndlumr","y.jndlumr","z.jndlumr","lum.jndlumr")] <- jnd[-(1:nrow(anchor_dat)),]
-  
+  jnds <- jnd[-(1:nrow(anchor_dat)),]
+  names(jnds) <- c("x.jndlumr","y.jndlumr","z.jndlumr","lum.jndlumr")
+  return(jnds)
 }
 
+# Set up a cluster using the number of cores (4 less than total number of laptop cores)
+no_cores <- detectCores() - 4
+cl <- makeCluster(no_cores)
+
+# Export the variables and functions needed by the workers
+clusterExport(cl, varlist = c("px", "anchor_dat", "jnd2xyz.crc", "coldist", "coldist2mat"))
+
+# apply the function over the rows of px
+list_jnds_scaledlum <- pblapply(
+  cl = cl,
+  1:nrow(px),
+  calc_row_scaledlum
+)
+stopCluster(cl)
+
+jnds_mat_scaledlum <- do.call(rbind, list_jnds_scaledlum)
+
+# add to px
+px[, c("x.jndlumr","y.jndlumr","z.jndlumr","lum.jndlumr")] <- jnds_mat_scaledlum
 
 
 
 # save
-data_filename <- paste(group, "patches.250716.rawcolspaces.rds")
+data_filename <- paste(group, "patches.250716.rawcolspaces.rds", sep = ".")
 saveRDS(px, 
         here::here(
           "2_Patches", "3_OutputData", "1_RawColourspaces",
