@@ -16,7 +16,7 @@ source("./2_Patches/2_Scripts/R/patch_plotting.R")
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Neoaves"
+clade <- "Neognaths"
 # Restrict to only species for which we have male and female data?
 mf_restrict <- TRUE
 
@@ -30,6 +30,43 @@ px <- readRDS(
   )
 )
 
+
+# check that all species/specimen combos have data for all body patches (the data is missing for Francolinus_albogularis
+# male specimens - no uRGB data for the breast, belly)
+# males
+px_m <- px %>% 
+  filter(sex == "M")
+spp_m <- px_m %>% 
+  pull(species) %>% 
+  unique()
+missing_spp_m <- lapply(spp_m, function(spp){
+  px_m_spp <- px_m[px_m$species == spp, ]
+  if(nrow(px_m_spp) == 10){
+    return(NULL) 
+  } else {
+    return(spp)
+  }
+})
+missing_spp_m <- unlist(missing_spp_m)
+# females
+px_f <- px %>% 
+  filter(sex == "F")
+spp_f <- px_f %>% 
+  pull(species) %>% 
+  unique()
+missing_spp_f <- lapply(spp_f, function(spp){
+  px_f_spp <- px_f[px_f$species == spp, ]
+  if(nrow(px_f_spp) == 10){
+    return(NULL) 
+  } else {
+    return(spp)
+  }
+})
+missing_spp_f <- unlist(missing_spp_f)
+# combine
+missing_spp_all <- c(missing_spp_m, missing_spp_f)
+
+
 # Restrict to only males and females, if requested - remove all unknown sex specimens
 if(mf_restrict == TRUE){
   
@@ -40,6 +77,9 @@ if(mf_restrict == TRUE){
   
   px <- px[px[["species"]] %in% mf_species, ]
   px <- px[px[["sex"]] != "U", ]
+  
+  # remove any species/sex that don't have full data
+  px <- px[(!px[["species"]] %in% missing_spp_all), ]
   
 }
 
@@ -112,7 +152,7 @@ if(mf_restrict == TRUE){
 saveRDS(
   non_PCA_colourspaces,
   here::here(
-    "2_Patches", "3_OutputData", "1_RawColourSpaces", 
+    "2_Patches", "3_OutputData", clade, "1_RawColourSpaces", 
     prepca_filename
   )
 )
@@ -129,7 +169,7 @@ if(mf_restrict == TRUE){
 # reload the raw colour spaces (if necessary)
 non_PCA_colourspaces <- readRDS(
   here::here(
-    "2_Patches", "3_OutputData", "1_RawColourSpaces", 
+    "2_Patches", "3_OutputData", clade, "1_RawColourSpaces", 
     prepca_filename
   )
 )
@@ -153,7 +193,7 @@ if(mf_restrict == TRUE){
 saveRDS(
   pca_spaces,
   here::here(
-    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA", 
+    "2_Patches", "3_OutputData", clade, "2_PCA_ColourPattern_spaces", "1_Raw_PCA", 
     pca_filename
   )
 )
@@ -164,7 +204,10 @@ saveRDS(
 # with both sets and check that qualitatively the results are unchanged
 
 # reload PCA (if necessary)
-pca_spaces <- readRDS("./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Passeriformes.patches.250716.PCAcolspaces.rds")
+pca_spaces <- readRDS(here::here(
+  "2_Patches", "3_OutputData", clade, "2_PCA_ColourPattern_spaces", "1_Raw_PCA", 
+  pca_filename
+))
 
 # plot the first two PCs (just for initial inspection - main visualisation below)
 plot(pca_spaces[["lab"]]$x)
