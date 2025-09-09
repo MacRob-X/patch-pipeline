@@ -7,13 +7,20 @@ library(dplyr)
 library(ggplot2)
 library(extrafont)
 
+# load plotting functions ----
+source(
+  here::here(
+    "2_Patches", "2_Scripts", "R", "plotting.R"
+  )
+)
+
 # clear environment
 rm(list=ls())
 
 # Choose parameters ----
 ## EDITABLE CODE ##
 ## Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Passeriformes"
+clade <- "Neognaths"
 ## Choose colour space mapping
 ## Note that if usmldbl or usmldblr, will have to manually modify date in filename below
 space <- "lab"
@@ -24,15 +31,17 @@ if(mf_restrict == TRUE){
 } else{
   spec_sex <- "allspecimens"
 }
+# Plot single double axis plot (FALSE) or four double axis plot (TRUE)?
+plot_multiple <- TRUE
 ## UMAP or PCA space?
 ## FALSE - use the PCA space
 ## TRUE - load a UMAP space from a file
 ## "perform" - load a PCA space from a file, then perform UMAP on it
 ## Note that if umap == TRUE, user will have to manually set path to umap file
-load_umap <- FALSE
+load_umap <- TRUE
 umap_filepath <- here::here(
-  "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
-  paste(clade, spec_sex, "patches", space, "pca.canonUMAP.rds", sep = ".")
+  "2_Patches", "3_OutputData", clade, "2_PCA_ColourPattern_spaces", "2_UMAP",
+  paste(clade, spec_sex, "patches", "nn.25.mindist.0.1", space, "UMAP.rds", sep = ".")
 )
 # umap_filepath <- here::here(
 #   "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
@@ -55,10 +64,12 @@ asp_ratio <- "wrap"
 ## Choose font "default" or name font (e.g. "Century Gothic")
 ## Use extrafont::fonts() to see available fonts
 font_par <- "Century Gothic"
+# set path to colour grids folder
+grid_path <- "C:/Users/bop23rxm/Documents/colour_grids_repositioned"
 
 # Load data ----
-
-if(load_umap == TRUE) {
+if(plot_multiple == FALSE){
+  if(load_umap == TRUE) {
     plot_space <- readr::read_rds(umap_filepath) %>% 
       magrittr::extract2("layout") %>% 
       as.data.frame() %>% 
@@ -67,18 +78,53 @@ if(load_umap == TRUE) {
       )
     x_axis <- "UMAP1"
     y_axis <- "UMAP2"
-} else if (load_umap == FALSE){
+  } else if (load_umap == FALSE){
+    # set path to file
+    pca_filepath <- here::here(
+      "2_Patches", "3_OutputData", clade, "2_PCA_ColourPattern_spaces", "1_Raw_PCA", 
+      paste(clade, "patches.250716.PCAcolspaces", "rds", sep = ".")
+      #    paste0("Neoaves.patches.250716.PCAcolspaces.", space, ".240829.rds")
+    )
+    # load data from file
+    pca_all <- readr::read_rds(pca_filepath) %>% 
+      magrittr::extract2(space)
+    # extract pc scores to plot
+    plot_space <- pca_all %>% 
+      magrittr::extract2("x") %>% 
+      as.data.frame()
+    # get proportions of variance for each axis
+    pca_variance <- pca_all %>% 
+      summary() %>% 
+      magrittr::extract2("importance") %>% 
+      as.data.frame()
+    
+    if(perform_umap == TRUE){
+      plot_space <- plot_space %>% 
+        umap::umap() %>% 
+        magrittr::extract2("layout") %>% 
+        as.data.frame() %>% 
+        rename(
+          UMAP1 = V1, UMAP2 = V2
+        )
+      x_axis <- "UMAP1"
+      y_axis <- "UMAP2"
+    }
+  }
+} else if(plot_multiple == TRUE){
+  
+  # load PCA space
+  
   # set path to file
   pca_filepath <- here::here(
-    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA", 
-    paste(clade, "patches.231030.PCAcolspaces", "rds", sep = ".")
-#    paste0("Neoaves.patches.231030.PCAcolspaces.", space, ".240829.rds")
+    "2_Patches", "3_OutputData", clade, "2_PCA_ColourPattern_spaces", "1_Raw_PCA", 
+    paste(clade, spec_sex, "patches.250716.PCAcolspaces", "rds", sep = ".")
+    #    paste0("Neoaves.patches.250716.PCAcolspaces.", space, ".240829.rds")
   )
   # load data from file
   pca_all <- readr::read_rds(pca_filepath) %>% 
     magrittr::extract2(space)
   # extract pc scores to plot
-  plot_space <- pca_all %>% 
+  pca_space <- pca_all %>% 
     magrittr::extract2("x") %>% 
     as.data.frame()
   # get proportions of variance for each axis
@@ -87,19 +133,138 @@ if(load_umap == TRUE) {
     magrittr::extract2("importance") %>% 
     as.data.frame()
   
-  if(perform_umap == TRUE){
-    plot_space <- plot_space %>% 
-      umap::umap() %>% 
+  if(load_umap == TRUE) {
+    
+    umap_space <- readr::read_rds(umap_filepath) %>% 
       magrittr::extract2("layout") %>% 
       as.data.frame() %>% 
       rename(
         UMAP1 = V1, UMAP2 = V2
       )
-    x_axis <- "UMAP1"
-    y_axis <- "UMAP2"
+
+  } else if (load_umap == FALSE){
+    
+    if(perform_umap == TRUE){
+      umap_space <- pca_space %>% 
+        umap::umap() %>% 
+        magrittr::extract2("layout") %>% 
+        as.data.frame() %>% 
+        rename(
+          UMAP1 = V1, UMAP2 = V2
+        )
+
+    }
   }
+  
 }
 
+
+
+# Plot space
+
+# for single plot
+if(plot_multiple == FALSE){
+  
+  # if plotting UMAP
+  if(load_umap == TRUE){
+    # set save path for plot
+    save_path <- here::here(
+      "2_Patches", "4_OutputPlots", clade, "1_Colourspace_visualisation", space,
+      paste(clade, sex_match, sex_focus, "patches_UMAPnn25mindist0.1.png", sep = "_")
+    )
+    # plot
+    plot_patch_grids(
+      umap_obj = umap,
+      colour_grid_path = grid_path, 
+      asp_ratio = "wrap",
+      save_as = "png",
+      save_path = save_path
+    )
+    
+  } else if(perform_umap == TRUE){
+    # set save path for plot
+    save_path <- here::here(
+      "2_Patches", "4_OutputPlots", clade, "1_Colourspace_visualisation", space,
+      paste(clade, sex_match, sex_focus, "patches_defaultUMAP.png", sep = "_")
+    )
+    # plot
+    plot_patch_grids(
+      umap_obj = umap,
+      colour_grid_path = grid_path, 
+      asp_ratio = "wrap",
+      save_as = "png",
+      save_path = save_path
+    )
+  } else {
+    # plot PC axes
+    
+    plot_patch_grids(
+      data_matrix = pca_space,
+      x_axis = x_axis, y_axis = y_axis,
+      colour_grid_path = grid_path, 
+      asp_ratio = "wrap",
+      save_as = "png",
+      save_path = save_path
+    )
+    
+  }
+  
+}
+
+# For multiple (four) plots
+if(plot_multiple == TRUE){
+  folder_path <- here::here(
+    "2_Patches", "4_OutputPlots", clade, "1_Colourspace_visualisation", space
+  )
+  # if plotting PC1-6 and UMAP
+  if(load_umap == TRUE){
+    
+    filename <- paste(clade, sex_match, sex_focus, "patches_PC1-PC6_UMAP.png", sep = "_")
+    plot_four_cg(
+      pca_all, "PC1", "PC2",
+      pca_all, "PC3", "PC4",
+      pca_all, "PC5", "PC6",
+      umap_space, "UMAP1", "UMAP2",
+      cg_path = grid_path,
+      save_type = "png",
+      write_folder = folder_path,
+      #  thin_number = 500,
+      file_name = filename
+    )
+  } else if(load_umap == FALSE){
+    # if plotting PC1-8
+    
+    filename <- paste(clade, sex_match, sex_focus, "patches_PC1-PC8.png", sep = "_")
+    plot_four_cg(
+      pca_all, "PC1", "PC2",
+      pca_all, "PC3", "PC4",
+      pca_all, "PC5", "PC6",
+      pca_all, "PC7", "PC8",
+      cg_path = grid_path,
+      save_type = "png",
+      write_folder = folder_path,
+      #  thin_number = 500,
+      file_name = filename
+    )
+    
+  }
+  
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### ARCHIVE ###
 
 ## Plot space ----
 
