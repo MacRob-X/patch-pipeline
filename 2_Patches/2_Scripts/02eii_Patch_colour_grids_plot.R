@@ -7,15 +7,15 @@ library(dplyr)
 library(ggplot2)
 library(extrafont)
 
+# clear environment
+rm(list=ls())
+
 # load plotting functions ----
 source(
   here::here(
     "2_Patches", "2_Scripts", "R", "plotting.R"
   )
 )
-
-# clear environment
-rm(list=ls())
 
 # Choose parameters ----
 ## EDITABLE CODE ##
@@ -32,7 +32,7 @@ if(mf_restrict == TRUE){
   spec_sex <- "allspecimens"
 }
 # Plot single double axis plot (FALSE) or four double axis plot (TRUE)?
-plot_multiple <- TRUE
+plot_multiple <- FALSE
 ## UMAP or PCA space?
 ## FALSE - use the PCA space
 ## TRUE - load a UMAP space from a file
@@ -170,11 +170,12 @@ if(plot_multiple == FALSE){
     # set save path for plot
     save_path <- here::here(
       "2_Patches", "4_OutputPlots", clade, "1_Colourspace_visualisation", space,
-      paste(clade, sex_match, sex_focus, "patches_UMAPnn25mindist0.1.png", sep = "_")
+      paste(clade, spec_sex, "all", "patches_UMAPnn25mindist0.1.png", sep = "_")
     )
     # plot
     plot_patch_grids(
-      umap_obj = umap,
+      data_matrix = plot_space,
+      x_axis = x_axis, y_axis = y_axis,
       colour_grid_path = grid_path, 
       asp_ratio = "wrap",
       save_as = "png",
@@ -185,11 +186,11 @@ if(plot_multiple == FALSE){
     # set save path for plot
     save_path <- here::here(
       "2_Patches", "4_OutputPlots", clade, "1_Colourspace_visualisation", space,
-      paste(clade, sex_match, sex_focus, "patches_defaultUMAP.png", sep = "_")
+      paste(clade, spec_sex, "all", "patches_defaultUMAP.png", sep = "_")
     )
     # plot
     plot_patch_grids(
-      umap_obj = umap,
+      data_matrix = umap_space,
       colour_grid_path = grid_path, 
       asp_ratio = "wrap",
       save_as = "png",
@@ -219,7 +220,7 @@ if(plot_multiple == TRUE){
   # if plotting PC1-6 and UMAP
   if(load_umap == TRUE){
     
-    filename <- paste(clade, sex_match, sex_focus, "patches_PC1-PC6_UMAP.png", sep = "_")
+    filename <- paste(clade, spec_sex, "all", "patches_PC1-PC6_UMAP.png", sep = "_")
     plot_four_cg(
       pca_all, "PC1", "PC2",
       pca_all, "PC3", "PC4",
@@ -234,7 +235,7 @@ if(plot_multiple == TRUE){
   } else if(load_umap == FALSE){
     # if plotting PC1-8
     
-    filename <- paste(clade, sex_match, sex_focus, "patches_PC1-PC8.png", sep = "_")
+    filename <- paste(clade, spec_sex, "all", "patches_PC1-PC8.png", sep = "_")
     plot_four_cg(
       pca_all, "PC1", "PC2",
       pca_all, "PC3", "PC4",
@@ -252,14 +253,61 @@ if(plot_multiple == TRUE){
 }
 
 
+# Heatmap plotting ----
+
+# clear environment
+rm(list=ls())
+
+# load plotting functions ----
+source(
+  here::here(
+    "2_Patches", "2_Scripts", "R", "plotting.R"
+  )
+)
+
+# load libraries
+library(terra)
+library(tidyterra)
+
+## EDITABLE CODE ##
+# Select subset of species ("Neoaves" or "Passeriformes")
+clade <- "Neognaths"
+# select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
+# N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
+# (from 240603 to 240806)
+space <- "lab"
+# select whether to use matched sex data (""all" or "matchedsex")
+# "matchedsex" will use diversity metrics calculated on a subset of data containing only species
+# for which we have both a male and female specimen (and excluding specimens of unknown sex)
+sex_match <- "matchedsex"
+# select sex of interest ("all", "male_female", "male_only", "female_only", "unknown_only")
+sex_interest <- "male_female"
+
+# Choose PC axes for which to plot heatmaps
+axes <- paste0("PC", 1:4)
+pixel_type <- "lab"
+# choose whether to plot heatmaps with constant unified colour scale for all PC axes ("constant"), individual 
+# colour scales for each axis ("axis") or individual colour scales for each channel of each axis ("axis_channel")
+col_scale_type <- "constant"
+
+# Load data ----
+
+# Load PCA data
+pca_filename <- paste(clade, sex_match, "patches.250716.PCAcolspaces", "rds", sep = ".")
+pca_all <- readRDS(
+  here::here(
+    "2_Patches", "3_OutputData", clade, "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
+    pca_filename
+  )
+)[[space]]
+pca_space <- pca_all
 
 
+# Generate non-stacked (standard) heatmaps
+p_standard <- patch_loading_heatmap(pca_all, axes, pixel_type, col_scale_type = col_scale_type)
 
-
-
-
-
-
+# generate stacked heatmaps
+p_stacked <- patch_loading_heatmap(pca_all, axes, pixel_type, col_scale_type = col_scale_type, stack_channels = TRUE)
 
 
 
