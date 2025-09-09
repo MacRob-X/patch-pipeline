@@ -632,7 +632,7 @@ plot_div_raster <- function(div_rast,
     if(assemb_level == FALSE){
       png(
         here::here(
-          "2_Patches", "4_OutputPlots", "3_Spatial_mapping", pam_res, space, pam_type,
+          "2_Patches", "4_OutputPlots", clade, "3_Spatial_mapping", pam_res, space, pam_type,
           png_filename
         ), 
         width = png_width, height = png_height, units = "mm", pointsize = 24, res = 100,
@@ -640,7 +640,7 @@ plot_div_raster <- function(div_rast,
     } else if(assemb_level == TRUE){
       png(
         here::here(
-          "2_Patches", "4_OutputPlots", "3_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space, pam_type,
+          "2_Patches", "4_OutputPlots", clade, "3_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space, pam_type,
           png_filename
         ), 
         width = png_width, height = png_height, units = "mm", pointsize = 24, res = 100,

@@ -29,11 +29,11 @@ source(
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Neoaves"
+clade <- "Neognaths"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
-space <- "ab"
+space <- "lab"
 # Select number of PC axes to retain ("all" or a number)
 axes <- "all"
 # select whether to use matched sex data (""all" or "matchedsex")
@@ -76,7 +76,7 @@ sift_rast_data <- FALSE
 # Select whether to use binned (based on quantiles) or continuous colour scale
 col_scale_type <- "binned"
 # If binned, choose the number of quantiles to use
-nquants <- 12
+nquants <- 10
 # Also plot species richness map?
 plot_sr <- TRUE
 ## Use viridis_c, viridis turbo palette or custom colour palette?
@@ -90,10 +90,10 @@ palette_choice <- "viridis"
 # Load data ----
 
 # Load PCA data
-pca_filename <- paste(clade, sex_match, "patches.231030.PCAcolspaces", "rds", sep = ".")
+pca_filename <- paste(clade, sex_match, "patches.250716.PCAcolspaces", "rds", sep = ".")
 pca_dat <- readRDS(
   here::here(
-    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
+    "2_Patches", "3_OutputData", clade, "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
     pca_filename
   )
 )[[space]][["x"]]
@@ -167,13 +167,13 @@ sr_mask <- make_sr_mask(species_richness, sr_threshold)
 # save mask for later use
 sr_mask_filename <- paste("species_richness_mask_threshold", sr_threshold, sub(".rds", "", pam_filename, fixed = TRUE), clade, sex_match, sep = "_")
 space_data_path <-  here::here(
-  "2_Patches", "3_OutputData", "6_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space, "sr_masks")
+  "2_Patches", "3_OutputData", clade, "6_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space, "sr_masks")
 if(!dir.exists(space_data_path)){
   dir.create(space_data_path, recursive = TRUE)
 }
 saveRDS(
   sr_mask, file = here::here(
-    "2_Patches", "3_OutputData", "6_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space, "sr_masks",
+    "2_Patches", "3_OutputData", clade, "6_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space, "sr_masks",
     paste0(sr_mask_filename, ".rds")
   )
 )
@@ -192,7 +192,7 @@ div_raster_filename <- paste("assemblvl", clade, "patches", space, sex_match, av
 terra::writeRaster(
   div_raster,
   filename = here::here(
-    "2_Patches", "3_OutputData", "6_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space,
+    "2_Patches", "3_OutputData", clade, "6_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space,
     div_raster_filename
   ),
 )
@@ -206,7 +206,7 @@ rm(list=setdiff(ls(), c("clade", "space", "sex_match", "metric", "avg_par", "pam
 div_raster_filename <- paste("assemblvl", clade, "patches", space, sex_match, avg_par, metric, "sr_thresh", sr_threshold, avg_par, pam_res, "Behrman", pam_type, pam_seas, "raster.tif", sep = ".")
 div_raster <- terra::rast(
   here::here(
-    "2_Patches", "3_OutputData", "6_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space,
+    "2_Patches", "3_OutputData", clade, "6_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space,
     div_raster_filename
   )
 )
@@ -215,7 +215,7 @@ div_raster <- terra::rast(
 sr_mask_filename <- paste0("species_richness_mask_threshold_", sr_threshold, "_PAM_birds_Behrman", pam_res, "_Pres12_Orig12_Seas12_", pam_type, pam_seas, "_", clade, "_", sex_match, ".rds")
 sr_mask <- readRDS(
   here::here(
-    "2_Patches", "3_OutputData", "6_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space, "sr_masks",
+    "2_Patches", "3_OutputData", clade, "6_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space, "sr_masks",
     sr_mask_filename
   )
 )
@@ -243,7 +243,7 @@ colour_breaks <- make_colour_breaks(div_raster_masked, nquants, plot_sr = plot_s
 png_filename <- paste(clade, "patches", sex_match, avg_par, metric, "sr_thresh", sr_threshold, col_scale_type, palette_choice, "colscale", "Behrman", pam_seas, "png", sep = ".")
 
 space_plot_path <-  here::here(
-  "2_Patches", "4_OutputPlots", "3_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space, pam_type)
+  "2_Patches", "4_OutputPlots", clade, "3_Spatial_mapping", "3_Assemblage_level_mapping", pam_res, space, pam_type)
 if(!dir.exists(space_plot_path)){
   dir.create(space_plot_path, recursive = TRUE)
 }
@@ -313,3 +313,17 @@ p_binned <- ggplot(div_df_binned, aes(x = centroid_distance, y = factor(lat_bin)
 
 # Display the binned version
 print(p_binned)
+
+# test if centroid distance related to latitude, accounting for species richness
+# create df for ggplot of latitudinal gradient
+test_df <- terra::as.data.frame(div_raster, xy = TRUE, wide = TRUE)
+colnames(test_df) <- c("longitude", "latitude", "centr_dist_M", "centr_dist_F", "species_richness")
+test_df$lat_scale <- scale(abs(test_df$latitude))
+test_df$sr_scale <- scale(test_df$species_richness)
+
+# lm
+mod_m <- lm(centr_dist_M ~ lat_scale + sr_scale, test_df)
+summary(mod_m)
+mod_f <- lm(centr_dist_F ~ lat_scale + sr_scale, test_df)
+summary(mod_f)
+

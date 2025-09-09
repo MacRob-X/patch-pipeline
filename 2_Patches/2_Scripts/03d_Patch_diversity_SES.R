@@ -29,7 +29,7 @@ avg <- function(vals, avg_type, na.rm = TRUE){
 
 ## EDITABLE CODE ## ----
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Neoaves"
+clade <- "Neognaths"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 space <- "lab"
 # select sex ("M", "F", "All")
@@ -62,13 +62,13 @@ iucn_type <- "nominate"
 pca_filename <- paste(clade, sex_match,  "patches.250716.PCAcolspaces", "rds", sep = ".")
 pca_all <- readRDS(
   here::here(
-    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
+    "2_Patches", "3_OutputData", clade, "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
     pca_filename
   )
 )[[space]]
 
 # load IUCN Red List data
-iucn_filename <- paste0("iucn_2024_", iucn_type, ".csv")
+iucn_filename <- paste0("neognath_iucn_2024_", iucn_type, ".csv")
 iucn <- read.csv(
   here::here(
     "4_SharedInputData", iucn_filename
@@ -355,7 +355,7 @@ filename <- paste0(clade, "_patch_", space,  "_SES_", "nsims", n_sims, "_", avg_
 write.csv(
   res, 
   here::here(
-    "2_Patches", "3_OutputData", "4_Diversity_measures", filename
+    "2_Patches", "3_OutputData", clade, "4_Diversity_measures", filename
     ), 
   row.names = FALSE
   )
@@ -376,7 +376,7 @@ for (sex in c("M", "F", "All")){
   # load file and calculate proportional species richness
   temp_res <- read.csv(
     here::here(
-    "2_Patches", "3_OutputData", "4_Diversity_measures", filename
+    "2_Patches", "3_OutputData", clade, "4_Diversity_measures", filename
     )
   ) %>% 
     mutate(

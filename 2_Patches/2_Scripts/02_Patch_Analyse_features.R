@@ -65,7 +65,7 @@ missing_spp_f <- lapply(spp_f, function(spp){
 missing_spp_f <- unlist(missing_spp_f)
 # combine
 missing_spp_all <- c(missing_spp_m, missing_spp_f)
-
+rm(px_f, px_m)
 
 # Restrict to only males and females, if requested - remove all unknown sex specimens
 if(mf_restrict == TRUE){

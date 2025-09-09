@@ -2375,7 +2375,7 @@ source(
 # Choose parameters ----
 ## EDITABLE CODE ##
 ## Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Neoaves"
+clade <- "Neognaths"
 ## Choose colour space mapping
 ## Note that if usmldbl or usmldblr, will have to manually modify date in filename below
 space <- "lab"
@@ -2390,10 +2390,10 @@ sex_focus <- "all"
 ## TRUE - load a UMAP space from a file
 ## "perform" - load a PCA space from a file, then perform UMAP on it
 ## Note that if umap == TRUE, user will have to manually set path to umap file
-load_umap <- TRUE
+load_umap <- FALSE
 umap_filepath <- here::here(
-  "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
-  paste(clade, sex_match, "patches", space, "pca", "canonUMAP.rds", sep = ".")
+  "2_Patches", "3_OutputData", clade, "2_PCA_ColourPattern_spaces", "2_UMAP",
+  paste(clade, sex_match, "patches", "nn.25.mindist.0.1", space, "UMAP.rds", sep = ".")
 )
 # umap_filepath <- here::here(
 #   "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
@@ -2420,8 +2420,8 @@ font_par <- "Century Gothic"
 # Load data ----
 umap <- readr::read_rds(umap_filepath)
 pca_filepath <- here::here(
-  "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA", 
-  paste(clade, sex_match, "patches.231030.PCAcolspaces", "rds", sep = ".")
+  "2_Patches", "3_OutputData", clade, "2_PCA_ColourPattern_spaces", "1_Raw_PCA", 
+  paste(clade, sex_match, "patches.250716.PCAcolspaces", "rds", sep = ".")
   #    paste0("Neoaves.patches.231030.PCAcolspaces.", space, ".240829.rds")
 )
 # load data from file
@@ -2436,6 +2436,10 @@ grid_path <- "C:/Users/bop23rxm/Documents/colour_grids_repositioned"
 save_path <- here::here(
   "junk",
   "test_colspace_plotting.png"
+)
+save_path <- here::here(
+  "2_Patches", "4_OutputPlots", clade, "1_Colourspace_visualisation", space,
+  paste(clade, sex_match, sex_focus, "patches_UMAPnn25mindist0.1.png", sep = "_")
 )
 
 # try plotting space with the function, with different inputs
@@ -2498,7 +2502,7 @@ plot_patch_grids(
 
 # try plotting four plots together (UMAP and first 6 PC axes)
 folder_path <- here::here(
-  "2_Patches", "4_OutputPlots", "1_Colourspace_visualisation", space
+  "2_Patches", "4_OutputPlots", clade, "1_Colourspace_visualisation", space
 )
 filename <- paste(clade, sex_match, sex_focus, "patches_PC1-PC8.png", sep = "_")
 plot_four_cg(
@@ -2509,7 +2513,7 @@ plot_four_cg(
   cg_path = grid_path,
   save_type = "png",
   write_folder = folder_path,
- # thin_number = 500,
+#  thin_number = 500,
   file_name = filename
 )
 
@@ -2563,3 +2567,111 @@ plot_four_cg(
   # thin_number = 500,
   file_name = "test_paca_axes1-8.png"
 )
+
+# 29/07/2025 ----
+# create PCA space with species and distance to centroid for Jas ----
+
+library(dispRity)
+source(
+  here::here(
+    "2_Patches", "2_Scripts", "R", "plotting.R"
+  )
+)
+
+# load PCA space
+spaces <- readRDS("G:/My Drive/patch-pipeline/2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/Neoaves.allspecimens.patches.231030.PCAcolspaces.rds")
+lab <- spaces$lab
+usml <- spaces$usml
+
+# extract coords
+lab <- lab$x
+usml <- usml$x
+
+# get distances ot centroid
+lab_dists <- dispRity(lab, centroids)$disparity[[1]][[1]]
+rownames(lab_dists) <- rownames(lab)
+usml_dists <- dispRity(usml, centroids)$disparity[[1]][[1]]
+rownames(usml_dists) <- rownames(usml)
+
+dists <- data.frame(
+  species = sapply(strsplit(rownames(lab), split = "-"), "[", 1),
+  sex = sapply(strsplit(rownames(lab), split = "-"), "[", 2),
+  lab_centr_dist = lab_dists,
+  usml_centr_dist = usml_dists
+  )
+
+write.csv(dists, file = here::here("junk", "centr_dists_for_jas.csv"))
+
+plot_matrix <- as.matrix(dists[, c("lab_centr_dist", "usml_centr_dist")])
+plot_matrix[, "lab_centr_dist"] <- scale(plot_matrix[, "lab_centr_dist"])
+plot_matrix[, "usml_centr_dist"] <- scale(plot_matrix[, "usml_centr_dist"])
+plot_patch_grids(
+  x_axis = "lab_centr_dist",
+  y_axis = "usml_centr_dist",
+  data_matrix = plot_matrix,
+  colour_grid_path = "C:/Users/bop23rxm/Documents/colour_grids_repositioned",
+  asp_ratio = "wrap",
+  save_as = "png",
+  save_path = here::here("junk", "centr_dists_for_jas.png")
+    
+)
+
+# 02/09/2025 ----
+# Count neognath species ----
+
+# libraries
+library(dplyr)
+
+# load patch data
+px <- readRDS("./2_Patches/1_InputData/patches.250716.rds")
+
+
+# load taxonomic data
+taxo <- read.csv("./4_SharedInputData/BLIOCPhyloMasterTax_2019_10_28.csv")
+
+# bind and remove any palaeognaths
+px <- px %>% 
+  left_join(
+    taxo,
+    by = join_by(species == TipLabel)
+  ) %>% 
+  filter(
+    IOCOrder != "STRUTHIONIFORMES", 
+    IOCOrder != "RHEIFORMES", 
+    IOCOrder != "CASUARIIFORMES", 
+    IOCOrder != "APTERYGIFORMES", 
+    IOCOrder != "TINAMIFORMES", 
+  )
+
+# count unique species in our data
+length(unique(px$species))
+
+# filter to only species for which we have male and female data
+px_meta <- px %>% 
+  select(species, sex) %>% 
+  distinct(species, sex)
+
+px_m <- px_meta %>% 
+  filter(sex == "M") %>% 
+  select(species)
+px_f <- px_meta %>% 
+  filter(sex == "F") %>% 
+  select(species)
+px_matched <- px_m %>% 
+  inner_join(px_f)
+# count species for which we have matched data
+n_matched <- nrow(px_matched)
+
+# count total neognath species in taxonomy
+n_taxo <- taxo %>% 
+  filter(
+    IOCOrder != "STRUTHIONIFORMES", 
+    IOCOrder != "RHEIFORMES", 
+    IOCOrder != "CASUARIIFORMES", 
+    IOCOrder != "APTERYGIFORMES", 
+    IOCOrder != "TINAMIFORMES", 
+  ) %>% 
+  nrow()
+
+# get percentage coverage
+pc_cov <- n_matched / n_taxo * 100
