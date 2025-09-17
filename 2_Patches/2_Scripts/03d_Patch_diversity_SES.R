@@ -26,6 +26,14 @@ source(
 avg <- function(vals, avg_type, na.rm = TRUE){
   return(get(avg_type)(vals, na.rm = na.rm))
 }
+# make wrapper function for calculating either std dev (if using mean) or median absolute deviation (if using median)
+dev_wrap <- function(vals, avg_type, na.rm = TRUE){
+  if(avg_type == "mean"){
+    return(sd(vals))
+  } else if(avg_type == "median"){
+    return(mad(vals))
+  }
+}
 
 ## EDITABLE CODE ## ----
 # Select subset of species ("Neoaves" or "Passeriformes")
@@ -43,7 +51,7 @@ sex_match <- "matchedsex"
 # be too slow to run)
 metric <- "centr-dist"
 # select type of averaging to use ("mean" or "median")
-avg_par <- "median"
+avg_par <- "mean"
 # select number of null distributions to generate
 n_sims <- 1000
 # select whther to use liberal, conservative, or nominate IUCN data
@@ -211,9 +219,9 @@ sims[1, ] <- unlist(
 
 
 # add results to table
-res[2,4] <- mean(sims)
-res[2,5] <- sd(sims)
-res[2,6] <- sd(sims)/sqrt(length(sims))
+res[2,4] <- avg(sims, avg_type = avg_par)
+res[2,5] <- dev_wrap(sims, avg_type = avg_par)
+res[2,6] <- dev_wrap(sims, avg_type = avg_par)/sqrt(length(sims))
 
 
 # extract traits for species in the random community
@@ -248,9 +256,9 @@ sims[1, ] <- unlist(
 )
 
 # add results to table
-res[3,4] <- mean(sims)
-res[3,5] <- sd(sims)
-res[3,6] <- sd(sims)/sqrt(length(sims))
+res[3,4] <- avg(sims, avg_type = avg_par)
+res[3,5] <- dev_wrap(sims, avg_type = avg_par)
+res[3,6] <- dev_wrap(sims, avg_type = avg_par)/sqrt(length(sims))
 
 # extract traits for species in the random community
 trait_vec <- matrix(traits[noVU,], ncol=dim(traits)[2])
@@ -284,9 +292,9 @@ sims[1, ] <- unlist(
 )
 
 
-res[4,4] <- mean(sims)
-res[4,5] <- sd(sims)
-res[4,6] <- sd(sims)/sqrt(length(sims))
+res[4,4] <- avg(sims, avg_type = avg_par)
+res[4,5] <- dev_wrap(sims, avg_type = avg_par)
+res[4,6] <- dev_wrap(sims, avg_type = avg_par)/sqrt(length(sims))
 
 # extract traits for species in the random community
 trait_vec <- matrix(traits[noNT,], ncol=dim(traits)[2])
@@ -322,9 +330,9 @@ sims[1, ] <- unlist(
 # stop the cluster
 stopCluster(cl)
 
-res[5,4] <- mean(sims)
-res[5,5] <- sd(sims)
-res[5,6] <- sd(sims)/sqrt(length(sims))
+res[5,4] <- avg(sims, avg_type = avg_par)
+res[5,5] <- dev_wrap(sims, avg_type = avg_par)
+res[5,6] <- dev_wrap(sims, avg_type = avg_par)/sqrt(length(sims))
 
 res <- as.data.frame(res)
 
@@ -431,7 +439,7 @@ p
 png_filename <- paste0(clade, "_patch_", space,  "_SES_", "nsims", n_sims, "_", avg_par, "_", metric, "_", iucn_type, "-iucn", ".png")
 png(
   here::here(
-    "2_Patches", "4_OutputPlots", "2_Diversity_measures", "1_Diversity_extinction_risk", 
+    "2_Patches", "4_OutputPlots", clade, "2_Diversity_measures", "1_Diversity_extinction_risk", 
     png_filename
   ),
   width = 1500, height = 2000/3, res = 150
