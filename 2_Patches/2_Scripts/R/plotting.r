@@ -598,12 +598,13 @@ plot_four_cg <- function(
 #' @param rgb_colours Should the plot be plotted in pseudo-RGB colouring? Only possible for pixrl_type == "srgb"
 #' @param col_scale_type Should the plot use a unified colour scale for all PC axes, or should each axis have its own colour scale? Individual colour scales for each channel of each axis are also supported
 #' @param stack_channels If TRUE, take absolute of each patch loadings and stack channels to give absolute measure of patch important (not compatible with col_scale_type = "axis_channel")
+#' @param label_stacked_axes If TRUE and stack_channels == TRUE, labels each stacked channel axis plot with the axis name (e.g. "PC1", "PC2", etc.). If FALSE, stacked channel plot will not have axis labels (useful when combining unstacked and stacked channel plots into a single figure)
 #'
 #' @return If write_path == NULL, returns a ggplot object of the heatmaps
 #' @export
 #'
 #' @examples
-patch_loading_heatmap <- function(pca_space, axes, pixel_type, write_path = NULL, rgb_colours = FALSE, col_scale_type = c("constant", "axis", "axis_channel"), stack_channels = FALSE){
+patch_loading_heatmap <- function(pca_space, axes, pixel_type, write_path = NULL, rgb_colours = FALSE, col_scale_type = c("constant", "axis", "axis_channel"), stack_channels = FALSE, label_stacked_axes = TRUE){
   
   # check col_scale_type and stack_channels parameters are compatible
   if(col_scale_type == "axis_channel" & stack_channels == TRUE){
@@ -1018,37 +1019,73 @@ patch_loading_heatmap <- function(pca_space, axes, pixel_type, write_path = NULL
       leg_grob <- ggpubr::get_legend(leg_plot)
       
       # combine individual channel plots into one figure
-      loadings_heatmap <- ggpubr::ggarrange(
-        plotlist = pc_plots, 
-        nrow = n_axes,
-        # ncol = n_channels, 
-        labels = axes, 
-        # label.x = 0.5,
-        # label.y = 0.2,
-        align = "hv",
-        widths = c(1, 1, 1),  # Adjust widths to minimize space
-        heights = c(1, 1, 1),
-        common.legend = TRUE,
-        legend.grob = leg_grob,
-        legend = "right"
-      )
-      
+      # if labelling axes
+      if(label_stacked_axes == TRUE){
+        loadings_heatmap <- ggpubr::ggarrange(
+          plotlist = pc_plots, 
+          nrow = n_axes,
+          # ncol = n_channels, 
+          labels = axes, 
+          # label.x = 0.5,
+          # label.y = 0.2,
+          align = "hv",
+          widths = c(1, 1, 1),  # Adjust widths to minimize space
+          heights = c(1, 1, 1),
+          common.legend = TRUE,
+          legend.grob = leg_grob,
+          legend = "right"
+        )
+      } else if(label_stacked_axes == FALSE){ # if not labelling axes
+        loadings_heatmap <- ggpubr::ggarrange(
+          plotlist = pc_plots, 
+          nrow = n_axes,
+          # ncol = n_channels, 
+          # labels = axes, 
+          # label.x = 0.5,
+          # label.y = 0.2,
+          align = "hv",
+          widths = c(1, 1, 1),  # Adjust widths to minimize space
+          heights = c(1, 1, 1),
+          common.legend = TRUE,
+          legend.grob = leg_grob,
+          legend = "right"
+        )
+      }
+
     } else if(col_scale_type == "axis"){
       
       # combine individual channel plots into one figure
-      loadings_heatmap <- ggpubr::ggarrange(
-        plotlist = pc_plots, 
-        nrow = n_axes,
-        # ncol = n_channels, 
-        labels = axes, 
-        # label.x = 0.5,
-        # label.y = 0.2,
-        align = "hv",
-        widths = c(1, 1, 1),  # Adjust widths to minimize space
-        heights = c(1, 1, 1),
-        common.legend = FALSE,
-        legend = "right"
-      )
+      # if labelling axes
+      if(label_stacked_axes == TRUE){
+        loadings_heatmap <- ggpubr::ggarrange(
+          plotlist = pc_plots, 
+          nrow = n_axes,
+          # ncol = n_channels, 
+          labels = axes, 
+          # label.x = 0.5,
+          # label.y = 0.2,
+          align = "hv",
+          widths = c(1, 1, 1),  # Adjust widths to minimize space
+          heights = c(1, 1, 1),
+          common.legend = FALSE,
+          legend = "right"
+        )
+      } else if(label_stacked_axes == FALSE){
+        loadings_heatmap <- ggpubr::ggarrange(
+          plotlist = pc_plots, 
+          nrow = n_axes,
+          # ncol = n_channels, 
+          # labels = axes, 
+          # label.x = 0.5,
+          # label.y = 0.2,
+          align = "hv",
+          widths = c(1, 1, 1),  # Adjust widths to minimize space
+          heights = c(1, 1, 1),
+          common.legend = FALSE,
+          legend = "right"
+        )
+      }
+      
       
     }
     

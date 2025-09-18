@@ -268,6 +268,7 @@ source(
 # load libraries
 library(terra)
 library(tidyterra)
+library(ggplot2)
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
@@ -307,11 +308,26 @@ pca_space <- pca_all
 p_standard <- patch_loading_heatmap(pca_all, axes, pixel_type, col_scale_type = col_scale_type)
 
 # generate stacked heatmaps
-p_stacked <- patch_loading_heatmap(pca_all, axes, pixel_type, col_scale_type = col_scale_type, stack_channels = TRUE)
+p_stacked <- patch_loading_heatmap(pca_all, axes, pixel_type, col_scale_type = col_scale_type, stack_channels = TRUE, label_stacked_axes = FALSE)
 
+# combine non-stacked and stacked
+p_comb <- ggpubr::ggarrange(p_standard, p_stacked, ncol = 2, labels = c("a", "b"))
 
-
-
+# save plot
+png_filename <- paste0(clade, "_", sex_match, "_all_patches_heatmaps_", paste(axes[1], tail(axes, 1), sep = "-"), ".png")
+png(
+  here::here(
+    "2_Patches", "4_OutputPlots", clade, "1_Colourspace_visualisation", space, "loading_heatmaps",
+    png_filename
+  ), width = 1000, height = 800, res = 110
+)
+p_comb
+dev.off()
+  
+  
+  
+  
+  
 ### ARCHIVE ###
 
 ## Plot space ----
