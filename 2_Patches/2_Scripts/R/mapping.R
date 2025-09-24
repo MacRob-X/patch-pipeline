@@ -78,6 +78,7 @@ load_regions <- function(regions){
     }
     
   }
+  return(ecoregions)
 }
 
 # extract null raster from PAM file
