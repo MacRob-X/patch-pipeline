@@ -18,38 +18,31 @@ library(ggplot2)
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Passeriformes"
+clade <- "Neognaths"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
 space <- "lab"
 # Select number of PC axes to retain ("all" or a number)
-axes <- "8"
+axes <- "all"
 # select whether to use matched sex data (""all" or "matchedsex")
 # "matchedsex" will use diversity metrics calculated on a subset of data containing only species
 # for which we have both a male and female specimen (and excluding specimens of unknown sex)
 sex_match <- "matchedsex"
 # select sex of interest ("all", "male_female", "male_only", "female_only", "unknown_only")
-sex_interest <- "male_female"
+sex_interest <- "all"
 
 
 # Load data ----
 
 # load patch data (PCA of whichever colourspace - generated in 02_Patch_Analyse_features.R)
-pca_filename <- paste(clade, sex_match, "patches.231030.PCAcolspaces", "rds", sep = ".")
+pca_filename <- paste(clade, sex_match, "patches.250716.PCAcolspaces", "rds", sep = ".")
 pca_all <- readRDS(
   here::here(
-    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
+    "2_Patches", "3_OutputData", clade, "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
     pca_filename
   )
 )[[space]]
-
-# load first 100 trees of Hackett backbone full trees
-phy <- ape::read.tree(
-  here::here(
-    "4_SharedInputData", "First100_AllBirdsHackett1.tre"
-  )
-)
 
 # load taxonomy, rename columns, and convert taxon subgroup to sentence case
 taxo <- read.csv(
@@ -70,6 +63,15 @@ taxo <- read.csv(
   mutate(
     taxon_subgroup = snakecase::to_sentence_case(taxon_subgroup)
   )
+
+
+# load first 100 trees of Hackett backbone full trees
+phy <- ape::read.tree(
+  here::here(
+    "4_SharedInputData", "First100_AllBirdsHackett1.tre"
+  )
+)
+
 
 
 ################ SHOULD I TRIM TO MALES/FEMALES ONLY BEFORE I CALCULATE DISTANCE TO CENTROID? ##################
@@ -372,19 +374,19 @@ p2
 # Calculate within-group diversity ----
 
 # Choose disparity metric to calculate ("centr-dist", "nn-k", "nn-all", "nn-count", "sum.variances", "sum.ranges", "convhull.volume")
-metric <- "convhull.volume"
+metric <- "centr-dist"
 # choose number of PC axes to work with ("all" or a number)
-axes <- 8
+axes <- "all"
 # Specify taxonomic level to calculate at ("genus", "family", "order", "taxon_subgroup")
 tax_level <- "taxon_subgroup"
 # Select sex to focus on ("M", "F", "All")
-sex_choice <- "F"
+sex_choice <- "All"
 # select type of averaging to use ("mean" or "median")
 avg_par <- "median"
 ## Drop depauperate clades? Specify min. number of species a clade must contain for it to be included
 ## Minimum is 2, as can't calculate centroid distances or pairwise distances for groups with
 ## only one species
-drop_depaup <- 9
+drop_depaup <- 10
 ## Plot on log scale?
 log_choice <- FALSE
 
@@ -396,6 +398,9 @@ source(
     "2_Patches", "2_Scripts", "R", "mapping.R"
   )
 )
+
+library(dispRity)
+library(ggplot2)
 
 # convert PCA data to dataframe and append taxonomy
 join_taxo <- function(pca_data, taxonomy, spec_taxo = "TipLabel"){
@@ -517,16 +522,32 @@ if(axes != "all"){
 # convert PCA data to dataframe and append taxonomy
 pca_dat <- join_taxo(pca_dat, taxo, spec_taxo = "TipLabel")
 
+
+
 # get list of sexes (function from mapping code)
 # we will use these to iterate over
-sexes <- set_sex_list(sex_interest)
+if(sex_interest == "male_female"){
+  sexes <- set_sex_list(sex_interest)
+} else{
+  # add extra rows for overall (unsexed) diversity
+  all_sex_dat <- pca_dat
+  all_sex_dat$sex <- paste(all_sex_dat$sex, "All", sep = "_")
+  pca_dat <- rbind(pca_dat, all_sex_dat)
+  sexes <- c("All", "M", "F")
+}
+
 
 # calculate within-group diversity for each sex separately
 within_group_diversity <- lapply(
   sexes, 
   function(sex, pca_data, taxo_level, n_dim, drop_depaup, avg_par, metric){
     
-    sexed_data <- pca_data[pca_data[, "sex"] == sex, ]
+    if(sex != "All"){
+      sexed_data <- pca_data[pca_data[, "sex"] == sex, ]
+    } else {
+      sexed_data <- pca_data[pca_data[, "sex"] %in% c("M_All", "F_All"), ]
+      drop_depaup <- drop_depaup * 2 # because the function will think there are twice the number of species when there's a male and female representative
+    }
     
     return(calc_group_div(sexed_data, taxo_level, n_dim, drop_depaup, avg_par = avg_par, metric = metric))
     
@@ -535,6 +556,8 @@ within_group_diversity <- lapply(
 
 # rbind list elements
 within_group_diversity <- data.table::rbindlist(within_group_diversity)
+# change All sex to All
+within_group_diversity[within_group_diversity$sex %in% c("M_All", "F_All"), "sex"] <- "All"
 
 
 # Boxplots by sex and group
@@ -544,6 +567,8 @@ if(clade == "Passeriformes"){
   ar <- 0.5
 } else if(clade == "Neoaves"){
   ar <- 0.8
+} else if(clade == "Neognaths"){
+  ar <- 0.9
 }
 
 # Set x-label
@@ -561,23 +586,45 @@ if(metric == "centr-dist"){
   x_lab <- "Within-group diversity"
 }
 
-p <- within_group_diversity %>% 
-  mutate(
-    taxon_subgroup = factor(taxon_subgroup, levels = sort(unique(taxon_subgroup), decreasing = TRUE))
+# convert taxon subgroup to factor with order based on overall metric value
+ts_levels <- within_group_diversity %>% 
+  filter(
+    sex == "All"
   ) %>% 
-  ggplot(aes(y = taxon_subgroup, x = log(group_metric), fill = log(avg_group_metric))) + 
+  arrange(
+    desc(avg_group_metric)
+  ) %>% 
+  select(
+    taxon_subgroup
+  ) %>% 
+  distinct() %>% 
+  pull() %>% 
+  rev()
+
+within_group_diversity <- within_group_diversity %>% 
+  mutate(
+    taxon_subgroup = factor(taxon_subgroup, levels = ts_levels),
+    sex = factor(sex, levels = sexes)
+  )
+
+
+p <- within_group_diversity %>% 
+  # filter(
+  #   sex == "F"
+  # ) %>% 
+  ggplot(aes(y = taxon_subgroup, x = group_metric, fill = avg_group_metric)) + 
   geom_boxplot(notch = FALSE, outliers = FALSE,) + 
-  facet_wrap(~ sex, ncol = length(sexes)) +
-  scale_fill_viridis_c(name = "Median\nDistance") +
+  facet_wrap(~ sex, ncol = length(sexes)+1) +
+  scale_fill_viridis_c(name = "Median\ncentroid\ndistance") +
   theme_minimal() +
   labs(x = x_lab, y = "Taxon Subgroup")
 
 # save as png
 
-boxplot_filename <- paste0(clade, "_patch_", space, "_", metric, "_", "boxplot.png")
+boxplot_filename <- paste0(clade, "_patch_", space, "_", metric, "_", sex_choice, "boxplot.png")
 png(
   here::here(
-    "2_Patches", "4_OutputPlots", "2_Diversity_measures", "2_Diversity_phylogeny",
+    "2_Patches", "4_OutputPlots", clade, "2_Diversity_measures", "2_Diversity_phylogeny",
     "within_group_diversity", paste(tax_level, "level", sep = "_"), "boxplots",
     boxplot_filename
   ), width = 1200, height = 1200*ar, res = 110
@@ -613,12 +660,11 @@ phylo_dat$species <- phylo_dat[, tax_level]
 rownames(phylo_dat) <- phylo_dat[, tax_level]
 
 # Overwrite tree tips with taxon only
-tree$tip.label <- phylo_dat[, tax_level]
+tree$tip.label <- as.character(phylo_dat[, tax_level])
 
 # Get tree trait tip data
 td <- data.frame(node = tidytree::nodeid(tree, rownames(phylo_dat)),
-                 mean_group_centr_dist = phylo_dat[, "mean_group_centr_dist"],
-                 mean_pairwise_dist = phylo_dat[, "mean_pairwise_dist"])
+                 avg_group_metric = phylo_dat[, "avg_group_metric"])
 td$node <- as.numeric(td$node)
 
 # put data and tree together
@@ -659,20 +705,21 @@ if(tax_level == "species"){
   folder <- "taxon_subgroup_level"
 }
 
+library(ggtree)
 # Mean distance to group centroid
 if(log_choice == TRUE) {
-  p <- ggtree::ggtree(phylo_dat_tree, aes(colour = log(mean_group_centr_dist)),
-                    layout = "circular",
+  p <- ggtree(phylo_dat_tree, aes(colour = log(avg_group_metric)),
+                    layout = "rectangular",
                     ladderize = TRUE, continuous = "colour", size = branch_width) + 
-  geom_tippoint(aes(colour = log(mean_group_centr_dist)), size = tip_size) + 
-  geom_tiplab(aes(colour = log(mean_group_centr_dist)), offset = 3, size = text_size) +
+  geom_tippoint(aes(colour = log(avg_group_metric)), size = tip_size) + 
+  geom_tiplab(aes(colour = log(avg_group_metric)), offset = 1, size = text_size) +
   scale_color_viridis_c(option = "D")
 } else {
-  p <- ggtree::ggtree(phylo_dat_tree, aes(colour = mean_group_centr_dist),
-                      layout = "circular",
+  p <- ggtree(phylo_dat_tree, aes(colour = avg_group_metric),
+                      layout = "rectangular",
                       ladderize = TRUE, continuous = "colour", size = branch_width) + 
-    geom_tippoint(aes(colour = mean_group_centr_dist), size = tip_size) + 
-    geom_tiplab(aes(colour = mean_group_centr_dist), offset = 3, size = text_size) +
+    geom_tippoint(aes(colour = avg_group_metric), size = tip_size) + 
+    geom_tiplab(aes(colour = avg_group_metric), offset = 1, size = text_size) +
     scale_color_viridis_c(option = "D")
   }
 p
