@@ -422,8 +422,8 @@ irate_master <- read.csv(
     order != "Casuariiformes", 
     order != "Apterygiformes", 
     order != "Tinamiformes", 
-    order != "Galliformes", 
-    order != "Anseriformes"
+ #   order != "Galliformes", 
+ #   order != "Anseriformes"
   )
 
 # load IUCN Red List data
@@ -509,9 +509,9 @@ sims <- matrix(NA, nrow=1, ncol = a) #place to store simulations for SES
 all <- rownames(species)
 # extract trait for species in the random community
 trait_vec <- matrix(trait[all,], ncol=dim(trait)[2])
-# calculate SR & median aesthetic attractiveness
+# calculate SR & mean aesthetic attractiveness
 res[1,2] <- length(all)
-res[1,3] <- median(trait_vec)
+res[1,3] <- mean(trait_vec)
 
 # get collections of species with threat levels sequentially trimmed
 noCR <- rownames(species)[species$iucn_cat != "CR"]
@@ -529,7 +529,7 @@ parallel::clusterExport(cl, c("all", "noCR", "noEN", "noVU", "noNT", "trait"))
 trait_vec <- matrix(trait[noCR,], ncol=dim(trait)[2])
 # calculate SR & Mean distance to centroid
 res[2,2] <- length(noCR)
-res[2,3] <- median(trait_vec)
+res[2,3] <- mean(trait_vec)
 
 # Use parLapply to replace the for loop with a parallelised apply function for speed
 sims[1, ] <- unlist(
@@ -542,7 +542,7 @@ sims[1, ] <- unlist(
       trait_vec <- matrix(trait[coms, ], ncol = dim(trait)[2])
       
       # Calculate the disparity value for the current simulation (column j)
-      disparity_value <-median(trait_vec)
+      disparity_value <-mean(trait_vec)
       
       return(disparity_value)
     }
@@ -560,7 +560,7 @@ res[2,6] <- sd(sims)/sqrt(length(sims))
 trait_vec <- matrix(trait[noEN,], ncol=dim(trait)[2])
 # calculate SR & Mean distance to centroid
 res[3,2] <- length(noEN)
-res[3,3] <- median(trait_vec)
+res[3,3] <- mean(trait_vec)
 
 # Use parLapply to replace the for loop with a parallelised apply function for speed
 sims[1, ] <- unlist(
@@ -573,7 +573,7 @@ sims[1, ] <- unlist(
       trait_vec <- matrix(trait[coms, ], ncol = dim(trait)[2])
       
       # Calculate the disparity value for the current simulation (column j)
-      disparity_value <- median(trait_vec)
+      disparity_value <- mean(trait_vec)
       
       return(disparity_value)
     }
@@ -589,7 +589,7 @@ res[3,6] <- sd(sims)/sqrt(length(sims))
 trait_vec <- matrix(trait[noVU,], ncol=dim(trait)[2])
 # calculate SR & Mean distance to centroid
 res[4,2] <- length(noVU)
-res[4,3] <- median(trait_vec)
+res[4,3] <- mean(trait_vec)
 
 # Use parLapply to replace the for loop with a parallelised apply function for speed
 sims[1, ] <- unlist(
@@ -602,7 +602,7 @@ sims[1, ] <- unlist(
       trait_vec <- matrix(trait[coms, ], ncol = dim(trait)[2])
       
       # Calculate the disparity value for the current simulation (column j)
-      disparity_value <- median(trait_vec)
+      disparity_value <- mean(trait_vec)
       
       return(disparity_value)
     }
@@ -618,7 +618,7 @@ res[4,6] <- sd(sims)/sqrt(length(sims))
 trait_vec <- matrix(trait[noNT,], ncol=dim(trait)[2])
 # calculate SR & Mean distance to centroid
 res[5,2] <- length(noNT)
-res[5,3] <- median(trait_vec)
+res[5,3] <- mean(trait_vec)
 
 # Use parLapply to replace the for loop with a parallelised apply function for speed
 sims[1, ] <- unlist(
@@ -631,7 +631,7 @@ sims[1, ] <- unlist(
       trait_vec <- matrix(trait[coms, ], ncol = dim(trait)[2])
       
       # Calculate the disparity value for the current simulation (column j)
-      disparity_value <- median(trait_vec)
+      disparity_value <- mean(trait_vec)
       
       return(disparity_value)
     }
@@ -670,11 +670,11 @@ res$Metric <- "Trait Diversity"
 
 # Save results as csv
 # set filename
-filename <- paste0( "iratebirds_", "SES_", "nsims", n_sims, "_", "attractiveness", "_", iucn_type, "-iucn", ".csv")
+filename <- paste0(clade, "_iratebirds_", "SES_", "nsims", n_sims, "_", "attractiveness", "_", iucn_type, "-iucn", ".csv")
 write.csv(
   res, 
   here::here(
-    "2_Patches", "3_OutputData", "4_Diversity_measures", filename
+    "2_Patches", "3_OutputData", clade, "4_Diversity_measures", filename
   ), 
   row.names = FALSE
 )
@@ -686,10 +686,10 @@ write.csv(
 rm(list=setdiff(ls(), c("clade", "space", "metric", "n_sims", "iucn_type")))
 
 # load in results and get species richness as a proportion
-filename <- paste0( "iratebirds_", "SES_", "nsims", n_sims, "_", "attractiveness", "_", iucn_type, "-iucn", ".csv")
+filename <- paste0(clade, "_iratebirds_", "SES_", "nsims", n_sims, "_", "attractiveness", "_", iucn_type, "-iucn", ".csv")
 res <- read.csv(
   here::here(
-    "2_Patches", "3_OutputData", "4_Diversity_measures", filename
+    "2_Patches", "3_OutputData",clade, "4_Diversity_measures", filename
   )
 ) %>% 
   mutate(
@@ -1340,7 +1340,7 @@ dists <- dists %>%
 
 
 # 19/05/2025 ----
-# PCA Loading heatmaps (for colour grids)
+# PCA Loading heatmaps (for colour grids) ----
 
 # clear environment
 rm(list=ls())
@@ -2675,3 +2675,627 @@ n_taxo <- taxo %>%
 
 # get percentage coverage
 pc_cov <- n_matched / n_taxo * 100
+
+# get generic coverage
+n_gen <- px_matched %>% 
+  left_join(taxo, by = join_by(species == TipLabel)) %>% 
+  select(GenusName) %>% 
+  distinct() %>% 
+  nrow()
+n_gen_taxo <- taxo %>% 
+  filter(
+    IOCOrder != "STRUTHIONIFORMES", 
+    IOCOrder != "RHEIFORMES", 
+    IOCOrder != "CASUARIIFORMES", 
+    IOCOrder != "APTERYGIFORMES", 
+    IOCOrder != "TINAMIFORMES", 
+  ) %>% 
+  select(GenusName) %>% 
+  distinct() %>% 
+  nrow()
+pc_gen_cov <- n_gen / n_gen_taxo * 100
+
+# 17/09/2025 ----
+# Investigate median SES noCR decline ----
+
+# attach libraries
+library(dplyr)
+library(dispRity)
+library(ggplot2)
+library(parallel)
+library(extrafont)
+
+# clear environment
+rm(list=ls())
+
+# custom dispRity metrics
+source(
+  here::here(
+    "3_SharedScripts", "dispRity_metric_functions.R"
+  )
+)
+
+# make wrapper function for averaging (allows selection of average type e.g. mean, median)
+avg <- function(vals, avg_type, na.rm = TRUE){
+  return(get(avg_type)(vals, na.rm = na.rm))
+}
+# make wrapper function for calculating either std dev (if using mean) or median absolute deviation (if using median)
+dev_wrap <- function(vals, avg_type, na.rm = TRUE){
+  if(avg_type == "mean"){
+    return(sd(vals))
+  } else if(avg_type == "median"){
+    return(mad(vals))
+  }
+}
+
+## EDITABLE CODE ## ----
+# Select subset of species ("Neoaves" or "Passeriformes")
+clade <- "Neognaths"
+# select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
+space <- "lab"
+# select sex ("M", "F", "All")
+sex <- "M"
+# select whether to use matched sex data (""all" or "matchedsex")
+# "matchedsex" will use diversity metrics calculated on a subset of data containing only species
+# for which we have both a male and female specimen (and excluding specimens of unknown sex)
+sex_match <- "matchedsex"
+# select metric ("centr-dist", "nn-k", "nn-count")
+# note that nn-k is EXTREMELY slow to run - needs parallelisation (but will probably still
+# be too slow to run)
+metric <- "centr-dist"
+# select type of averaging to use ("mean" or "median")
+avg_par <- "median"
+# select number of null distributions to generate
+n_sims <- 1000
+# select whther to use liberal, conservative, or nominate IUCN data
+# "liberal" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
+# are assigned the highest threat level of the multiple species
+# "conservative" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
+# are assigned the lowest threat level of the multiple species
+# "nominate" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
+# are assigned the threat level of the BL species that corresponds to the nominate subspecies
+iucn_type <- "nominate"
+## END EDITABLE CODE ##
+
+# Load data ----
+
+# load patch data (PCA of whichever colourspace - generated in 02_Patch_Analyse_features.R)
+pca_filename <- paste(clade, sex_match,  "patches.250716.PCAcolspaces", "rds", sep = ".")
+pca_all <- readRDS(
+  here::here(
+    "2_Patches", "3_OutputData", clade, "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
+    pca_filename
+  )
+)[[space]]
+
+# load IUCN Red List data
+iucn_filename <- paste0("neognath_iucn_2024_", iucn_type, ".csv")
+iucn <- read.csv(
+  here::here(
+    "4_SharedInputData", iucn_filename
+  )
+)
+
+####################    
+### 2: GLOBAL ANALYSIS
+####################   
+## a) Morphological diversity
+## NB: To generate Table S1, the code below can be ran on individual PCs.
+## E.g. traits <- trait[,1]
+
+
+
+# Matrix containing PCs:
+trait <- pca_all %>% 
+  magrittr::extract2(
+    "x"
+  ) %>% 
+  as.data.frame() %>% 
+  mutate(
+    species = sapply(strsplit(rownames(.), split = "-"), "[", 1),
+    sex = sapply(strsplit(rownames(.), split = "-"), "[", 2)
+  ) 
+
+# Species matched to IUCN categories:
+species <- iucn %>% 
+  rename(
+    species = species_birdtree
+  ) %>% 
+  select(
+    species, iucn_cat
+  ) %>% 
+  filter(
+    species %in% trait[, "species"]
+  )
+
+# remove species not in IUCN data (now unnecessary since I've crossmatched the iucn data)
+trait <- trait[trait[, "species"] %in% species[, "species"], ]
+
+# check species are identical in both matrices
+spec_iucn <- sort(species[, "species"])
+spec_trait <- sort(unique(trait[, "species"]))
+identical(spec_iucn, spec_trait)
+rm(spec_iucn, spec_trait)
+
+# add extra rows in species for M/F/U
+species$sex <- "M"
+species_F <- species; species_F$sex <- "F"
+species <- rbind(species, species_F)
+rm(species_F)
+rownames(species) <- paste(species$species, species$sex, sep = "-")
+species <- species[rownames(species) %in% rownames(trait), ]
+# reorder to match trait data
+species <- species[match(rownames(trait), rownames(species)), ]
+
+# Subset to chosen sex
+if(sex != "All"){
+  trait <- trait[trait[, "sex"] == sex, ]
+  species <- species[species[, "sex"] == sex, ]
+  unique_species <- NULL # so the parallelisation cluster export doesn't throw an error
+} else {
+  # get unique species (to subset species/sex pairs later)
+  unique_species <- unique(trait[["species"]])
+  
+}
+
+
+# Use all PCS to account for 100% variation in traits
+### All PCs
+traits <- as.matrix(trait[,1:(ncol(trait) - 2)])
+
+### OUTPUT DATA FRAME
+res <- matrix(NA, nrow=3, ncol = 6)
+colnames(res) <- c("sex", "subset", "mean", "sd", "median", "mad")
+res[, "sex"] <- c(sex, sex, sex)
+res[, "subset"] <- c("all", "noCR", "CR")
+
+
+a <- n_sims #change depending on number of simulations  
+sims <- matrix(NA, nrow=1, ncol = a) #place to store simulations for SES
+
+# set dispRity metric
+if(metric == "centr-dist"){
+  metric_get <- "centroids"
+} else if (metric == "nn-k"){
+  metric_get <- "mean.nn.dist"
+}else if (metric == "nn-count"){
+  metric_get <- "count.neighbours"
+}
+
+
+all <- rownames(species)
+# extract traits for species in the random community
+trait_vec <- matrix(traits[all,], ncol=dim(traits)[2])
+# calculate SR & Mean distance to centroid
+all_distrib <- dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]]
+
+# populate results
+res[1, "mean"] <- mean(all_distrib)
+res[1, "median"] <- median(all_distrib)
+res[1, "sd"] <- sd(all_distrib)
+res[1, "mad"] <- mad(all_distrib)
+
+# get collections of species with threat levels sequentially trimmed
+noCR <- rownames(species)[species$iucn_cat != "CR"]
+CR <- rownames(species)[species$iucn_cat == "CR"]
+EN <- rownames(species)[species$iucn_cat == "EN"]
+VU <- rownames(species)[species$iucn_cat == "VU"]
+
+
+# extract traits for species in the random community
+trait_vec <- matrix(traits[noCR,], ncol=dim(traits)[2])
+# calculate SR & Mean distance to centroid
+noCR_distrib <- dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]]
+
+# populate results
+res[2, "mean"] <- mean(noCR_distrib)
+res[2, "median"] <- median(noCR_distrib)
+res[2, "sd"] <- sd(noCR_distrib)
+res[2, "mad"] <- mad(noCR_distrib)
+
+# for CR species only
+# extract traits for species in the random community
+trait_vec <- matrix(traits[CR,], ncol=dim(traits)[2])
+# calculate SR & Mean distance to centroid
+CR_distrib <- dispRity(trait_vec, metric = get(metric_get))$disparity[[1]][[1]]
+
+# populate results
+res[3, "mean"] <- mean(CR_distrib)
+res[3, "median"] <- median(CR_distrib)
+res[3, "sd"] <- sd(CR_distrib)
+res[3, "mad"] <- mad(CR_distrib)
+
+write.csv(res, here::here("junk", paste0("distribs_", sex, ".csv")))
+
+
+# collate sex-specific stats (after running the above for all sexes)
+all_distribs <- rbind(
+  read.csv(here::here("junk", "distribs_All.csv")),
+  read.csv(here::here("junk", "distribs_M.csv")),
+  read.csv(here::here("junk", "distribs_F.csv"))
+)
+write.csv(all_distribs, here::here("junk", "distribs_collated.csv"))
+
+
+# 29/09/2025
+# Plot space with particular taxonomic groups highlighted ----
+
+# Clear environment
+rm(list=ls())
+
+# load plotting functions ----
+source(
+  here::here(
+    "2_Patches", "2_Scripts", "R", "plotting.R"
+  )
+)
+
+
+## EDITABLE CODE ##
+# Select subset of species ("Neoaves" or "Passeriformes")
+clade <- "Neognaths"
+# select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
+# N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
+# (from 240603 to 240806)
+space <- "lab"
+# Select number of PC axes to retain ("all" or a number)
+axes <- "all"
+# select whether to use matched sex data (""all" or "matchedsex")
+# "matchedsex" will use diversity metrics calculated on a subset of data containing only species
+# for which we have both a male and female specimen (and excluding specimens of unknown sex)
+sex_match <- "matchedsex"
+# select sex of interest ("all", "male_female", "male_only", "female_only", "unknown_only")
+sex_interest <- "male_female"
+## Choose aspect ratio 
+## -"square" fixes to size 2500x2500px 
+## - "wrap" sets the axis with the larger range to 2500px and scales the other accordingly)
+## "square" is better if you want to combine multiple plots into one figure, "wrap" 
+## is better for a single plot as it wraps the size of the plot to the range sizes
+## Note that the aspect ratio of the plot itself is always fixed to 1, this parameter is 
+## solely to control the aspect ratio of the output png
+asp_ratio <- "wrap"
+## Choose font "default" or name font (e.g. "Century Gothic")
+## Use extrafont::fonts() to see available fonts
+font_par <- "Century Gothic"
+# set path to colour grids folder
+grid_path <- "C:/Users/bop23rxm/Documents/colour_grids_repositioned"
+
+# Load data
+
+# pca data
+pca_filename <- paste(clade, sex_match, "patches.250716.PCAcolspaces", "rds", sep = ".")
+pca_all <- readRDS(
+  here::here(
+    "2_Patches", "3_OutputData", clade, "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
+    pca_filename
+  )
+)[[space]]
+
+# UMAP data
+umap_filename <- paste(clade, sex_match, "patches", "nn.25.mindist.0.1", space, "UMAP.rds", sep = ".")
+umap_all <- readRDS(
+  here::here(
+    "2_Patches", "3_OutputData", clade, "2_PCA_ColourPattern_spaces", "2_UMAP",
+    umap_filename
+  )
+)
+
+# load taxonomic data
+taxo_master <- read.csv(
+  here::here(
+    "4_SharedInputData", "BLIOCPhyloMasterTax_2019_10_28.csv"
+  )
+)
+
+
+# Function to plot space with particular group highlighted
+# Modified version of the main colour grid plotting function
+# Plot patches space with colour grids
+plot_patch_taxogroups <- function(
+    x_axis = NULL, y_axis = NULL,
+    data_matrix = NULL,
+    umap_obj = NULL, 
+    prcomp_obj = NULL,
+    colour_grid_path,
+    row_names = NULL,
+    x_label = NULL, y_label = NULL,
+    asp_ratio = c("wrap", "square"),
+    save_as = NULL, # currently only "png" and "plot_object" is implemented
+    save_path = NULL,
+    font_par = NULL,
+    thin_number = NULL,
+    fourplot = FALSE, fourplot_size = c(10, 10.5),
+    taxonomy = NULL, # taxonomy - must contain family, order, or taxon_subgroup column
+    taxo_level = c("family", "order", "taxon_subgroup"), # choose whether to highlight a family, order, or taxonomic subgroup (family for non-passerines, order for passerines)
+    group_name = NULL
+    
+){
+  
+  # load dplyr (I should really rewrite everything to base R)
+  require(dplyr)
+  
+  # function to test if axes are atomic, numeric vectors
+  is.anv <- function(axis){
+    if(is.atomic(axis) & is.numeric(axis) & is.vector(axis)){
+      return(TRUE)
+    } else {
+      return(FALSE)
+    }
+  }
+  
+  # Check only one data type has been provided - stop if not
+  if(is.anv(x_axis) & is.anv(y_axis)){
+    if(!is.null(data_matrix) | !is.null(umap_obj) | !is.null(prcomp_obj)){
+      stop("More than one data type provided.")
+    }
+  } else if(is.character(x_axis) & is.character(y_axis)){
+    if(all(is.null(data_matrix), is.null(umap_obj), is.null(prcomp_obj))){
+      stop("No data provided.")
+    } else if((!is.null(data_matrix) + !is.null(umap_obj) + !is.null(prcomp_obj)) >= 2){
+      stop("More than one data type provided.")
+    }
+  }
+  
+  # If highlighting a particular group, check columns are correct
+  if(!is.null(taxonomy)){
+    
+    # check the relevant column is present in the taxonomy
+    if(!(taxo_level %in% colnames(taxonomy))){
+      stop("Chosen taxonomic subgroup not present in taxonomy")
+    }
+    
+    # check there's a species column in the taxonomy
+    if(!("species" %in% colnames(taxonomy))){
+      stop("Taxonomy must contain a 'species' column")
+    }
+    
+  }
+  
+
+  # Check what type of object has been provided and set up plot space
+  
+  # if axes have been provided as data columns
+  if(is.anv(x_axis) & is.anv(y_axis)){
+    
+    # check if rownames have been provided and match length of data columns 
+    # need the rownames to get the png colour grid names
+    if(is.null(row_names)){
+      stop("No rownames provided.")
+    }
+    
+    plot_space <- cbind(x_axis, y_axis)
+    rownames(plot_space) <- row_names
+    
+    x_axis <- "axis_1"; y_axis <- "axis_2"
+    colnames(plot_space) <- c(x_axis, y_axis)
+    
+    # check if axis labels have been provided
+    if(any(is.null(x_label), is.null(y_label))){
+      warning("Axis labels not set. Setting to default labels.")
+      # set to defaults if not provided
+      x_label <- "Axis 1"; y_label <- "Axis 2"
+    }
+    
+  } else if(is.character(x_axis) & is.character(y_axis)){
+    # if axes have been provided as characters (e.g. "PC1", "PC2", "UMAP1", "UMAP2 etc)
+    
+    # Check if data has been provided as a prcomp object, a UMAP object, or as a data matrix
+    # and extract data if necessary
+    if(!is.null(prcomp_obj)){
+      
+      plot_space <- prcomp_obj %>% 
+        magrittr::extract2("x") %>% 
+        as.data.frame()
+      
+      # get proportions of variance for each axis
+      pca_variance <- prcomp_obj %>% 
+        summary() %>% 
+        magrittr::extract2("importance") %>% 
+        as.data.frame()
+      
+      
+    } else if(!is.null(umap_obj)){
+      
+      plot_space <- umap_obj %>% 
+        magrittr::extract2("layout") %>% 
+        as.data.frame() %>% 
+        rename(
+          UMAP1 = V1, UMAP2 = V2
+        )
+      x_axis <- "UMAP1"; y_axis <- "UMAP2"
+      
+    } else if(!is.null(data_matrix)){
+      
+      plot_space <- data_matrix
+      
+      # check that named axes are in data matrix
+      if(!(x_axis %in% colnames(plot_space) & y_axis %in% colnames(plot_space))){
+        stop("Chosen axes are not columns in data_matrix.")
+      }
+      
+    }
+    
+  } else if(any(is.null(x_axis), is.null(y_axis))){
+    
+    if(!is.null(umap_obj)){
+      
+      plot_space <- umap_obj %>% 
+        magrittr::extract2("layout") %>% 
+        as.data.frame() %>% 
+        rename(
+          UMAP1 = V1, UMAP2 = V2
+        )
+      x_axis <- "UMAP1"; y_axis <- "UMAP2"
+      
+    }
+    
+  }
+  
+
+  
+  # if requested, thin to specific number of random species
+  if(!is.null(thin_number)){
+    
+    all_spp <- sapply(strsplit(rownames(plot_space), split = "-"), "[", 1)
+    
+    unique_spp <- unique(sapply(strsplit(rownames(plot_space), split = "-"), "[", 1))
+    
+    spp_subset <- sample(unique_spp, thin_number, replace = FALSE)
+    
+    # subset plot space to only random species
+    rows_to_keep <- which(all_spp %in% spp_subset)
+    plot_space <- plot_space[rows_to_keep, ]
+    
+  }
+  
+  # set axis labels if not yet set
+  if(!is.null(umap_obj)){
+    x_label <- "UMAP1"
+    y_label <- "UMAP2"
+  } else if(!is.null(prcomp_obj)) {
+    x_label <- paste0(x_axis, " (", round(pca_variance[, x_axis][2], 2) * 100, "% of variance)")
+    y_label <- paste0(y_axis, " (", round(pca_variance[, y_axis][2], 2) * 100, "% of variance)")
+  } else if(!is.null(data_matrix) & any(is.null(x_label), is.null(y_label))){
+    warning("Axis labels not set. Setting to axis names.")
+    # set to defaults if not provided
+    x_label <- x_axis; y_label <- y_axis
+  }
+  
+  
+  # set up saving
+  if(!is.null(save_as)){
+    if(save_as == "png"){
+      
+      # set up aspect ratio
+      if(asp_ratio == "wrap"){
+        # determine axis with greatest range (to determine size of png)
+        range_x_axis <- diff(range(plot_space[, x_axis]))
+        range_y_axis <- diff(range(plot_space[, y_axis]))
+        if(range_x_axis > range_y_axis){
+          png_width <- 2500
+          png_height <- png_width * (range_y_axis / range_x_axis)
+        } else if(range_y_axis > range_x_axis){
+          png_height <- 2500
+          png_width <- png_height * (range_x_axis / range_y_axis)
+        }
+      } else if (asp_ratio == "square"){
+        png_width <- 2500
+        png_height <- 2500
+      }
+      
+      # set up device
+      if(is.null(font_par)){
+        png(
+          save_path,
+          width = png_width, height = png_height,
+          units = "px",
+          pointsize = 40
+        )
+      } else {
+        png(
+          save_path,
+          width = png_width, height = png_height,
+          units = "px",
+          pointsize = 40,
+          family = font_par
+        )
+      }
+      
+    }
+  }
+  
+  # fix aspect ratio as square, if requested
+  if(asp_ratio == "square"){
+    par(pty = "s")
+  }
+  
+  dev.hold()
+  
+  plot(plot_space[, y_axis] ~ plot_space[, x_axis], 
+       asp = T, 
+       type = "n", 
+       xlab = "", ylab = "", las = 1,
+       # xaxt = "n", yaxt = "n"
+       #     xlim = xrange,  ylim = yrange
+  )
+  title(xlab = x_label, ylab = y_label)
+  
+  box(lwd = 2)
+  # if plotting as a single plot, define colour grid size relative to plot range
+  if(fourplot == FALSE){
+    rw <- diff(range(plot_space[,1]))/12
+    rw_x <- rw / 15
+    rw_y <- rw / 9
+  } else if(fourplot == TRUE){
+    # if plotting as part of a four-panel plot, define grid size as absolute relative to overall plot size
+    x_range <- diff(range(plot_space[, x_axis]))
+    grid_width_inches <- (fourplot_size[1] / 100) * 1.8
+    grid_size_par <- (grid_width_inches / fourplot_size[1]) * x_range
+    rw_x <- grid_size_par / 2
+    rw_y <- rw_x * (5/3)
+  }
+  
+  
+  for(i in 1:nrow(plot_space)){
+    fname <- rownames(plot_space)[i]
+    fpng <- png::readPNG(paste0(
+      colour_grid_path, "/",
+      paste(strsplit(fname, split="-")[[1]][1:2], collapse = "_"), ".png"))
+    
+    # check if species is in highlighted subgroup - make transparent if not
+    image_spp <- strsplit(fname, split="-")[[1]][1]
+    if(taxonomy[taxonomy$species == image_spp, taxo_level] != group_name){
+      fpng_a <- array(1, dim = c(dim(fpng)[1], dim(fpng)[2], 4))
+      fpng_a[, , 1:3] <- fpng
+      fpng_a[, , 4] <- 0.1
+      fpng <- fpng_a
+    }
+    
+    rasterImage(fpng, 
+                xleft = plot_space[i, x_axis] - rw_x, 
+                ybottom = plot_space[i, y_axis] - rw_y, 
+                xright = plot_space[i, x_axis] + rw_x, 
+                ytop = plot_space[i, y_axis] + rw_y)
+    cat(paste0("\r", i, " of ", nrow(plot_space), " processed"))
+    
+    if(isTRUE(all.equal(i/500, as.integer(i/500)))){
+      # Force an update to the graphics device after each 500 images
+      # This helps prevent memory issues
+      if(interactive()) {
+        Sys.sleep(0.01)  # Small delay to allow graphics to update
+      }
+      
+      # Free up memory
+      gc()
+    }
+    
+  }
+  
+  dev.flush()
+  
+  if(!is.null(save_as)){
+    dev.off()
+  }
+  
+  
+}
+
+
+# test function
+
+# clean taxonomy column names
+taxo_clean <- taxo_master
+colnames(taxo_clean) <- sub("TipLabel", "species", colnames(taxo_clean))
+colnames(taxo_clean) <- sub("IOCOrder", "order", colnames(taxo_clean))
+colnames(taxo_clean) <- sub("BLFamilyLatin", "family", colnames(taxo_clean))
+colnames(taxo_clean) <- sub("Taxon_subgroup", "taxon_subgroup", colnames(taxo_clean))
+
+# set taxon subgroup to highlight
+hl_group <- "CORACIIFORMES"
+
+# set plot name
+plot_path <- here::here("junk", paste0("plot_highlighted_", hl_group, ".png"))
+
+# plot, highlighting a particular taxonomic subgroup
+plot_patch_taxogroups(umap_obj = umap_all, colour_grid_path = grid_path, asp_ratio = asp_ratio, save_as = "png", save_path = plot_path, taxonomy = taxo_clean, taxo_level = "taxon_subgroup", group_name = hl_group)
+
