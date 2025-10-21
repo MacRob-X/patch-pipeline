@@ -324,7 +324,7 @@ results_dfs_ses <- lapply(sexes, function(sex){
   # bind results together into a single dataframe
   ses_results_sexed <- as.data.frame(do.call(rbind, ses_results_sexed))
   
-  colnames(ses_results_sexed) <- c("all", "CR", "EN", "VU", "NT")
+  colnames(ses_results_sexed) <- paste("ses", c("all", "CR", "EN", "VU", "NT"), sep = "_")
   
   # adjust column names to specify sex
   colnames(ses_results_sexed) <- paste(sex, colnames(ses_results_sexed), sep = "_")
@@ -400,7 +400,7 @@ output_folder <- here::here("2_Patches", "3_OutputData", clade, "6_Spatial_mappi
 if(!dir.exists(output_folder)){
   dir.create(output_folder, recursive = TRUE)
 }
-sf::st_write(region_shapes, paste(output_folder, results_sh_filename, sep = "/"))
+sf::st_write(region_shapes, paste(output_folder, results_sh_filename, sep = "/"),append = FALSE)
 
 # save as dfs with biome info but no geometry
 region_results_dfs_nogeom <- sf::st_drop_geometry(region_results)
