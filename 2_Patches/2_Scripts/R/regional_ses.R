@@ -182,8 +182,16 @@ calc_region_ses <- function(region_sf, pca_data, pam, null_raster, iucn, metric,
   }
   
   # set up results matrix
-  results <- matrix(NA, nrow=5, ncol = 7)
-  colnames(results) <- c("iucn", "species_richness", "raw", "null_mean", "null_sd", "null_se", "ses")
+  results <- matrix(NA, nrow=5, ncol = 9)
+  colnames(results) <- c("iucn", "species_richness", "raw", "null_mean", "null_sd", "null_se", "ses", "region_num", "region_name")
+  # assign region number
+  if(regions == "biomes"){
+    results[, "region_num"] <- rep(region_sf$BIOME_NUM, nrow(results))
+    results[, "region_name"] <- rep(region_sf$BIOME_NAME, nrow(results))
+  } else if(regions == "ecoregions"){
+    results[, "region_num"] <- rep(region_sf$OBJECTID, nrow(results))
+    results[, "region_name"] <- rep(region_sf$ECO_NAME, nrow(results))
+  }
   
   # create null rast, subsetted to extent of ecoregion
   # first assign values to null_rast to keep track of grid cells
@@ -275,7 +283,7 @@ calc_region_ses <- function(region_sf, pca_data, pam, null_raster, iucn, metric,
   results[2:5, 1:6] <- do.call(rbind, res)
   
   # calculate and append SES
-  results[2:5, "ses"] <- (results[2:5, "raw"] - results[2:5, "null_mean"])/results[2:5, "null_sd"]
+  results[2:5, "ses"] <- (as.numeric(results[2:5, "raw"]) - as.numeric(results[2:5, "null_mean"]))/as.numeric(results[2:5, "null_sd"])
   results[1, "ses"] <- 0
   
   # add iucn category names
@@ -303,10 +311,17 @@ calc_region_ses <- function(region_sf, pca_data, pam, null_raster, iucn, metric,
 
 
 # calculate SESs for sequential trimming of IUCN levels for a single taxonomic group
-calc_group_ses <- function(group, pca_data, taxonomy, iucn, metric, tax_level, n_sims, ...){
+calc_group_ses <- function(group, pca_data, taxonomy, iucn, metric, tax_level, n_sims, div_loss_type, ...){
   
   # show which group is being processed
   message(paste0("\rProcessing group ", group))
+  
+  # set centroid
+  if(div_loss_type =="global"){
+    centroid = 0
+  } else if(div_loss_type == "local"){
+    centroid = colMeans(pca_data)
+  }
   
   # set dispRity metric
   metric_get <- set_metric(metric)
@@ -321,11 +336,17 @@ calc_group_ses <- function(group, pca_data, taxonomy, iucn, metric, tax_level, n
   # get species in group of interest
   species_pres <- taxonomy[taxonomy[, tax_level] == group, "species"]
   
+  # if only one species present, return NAs
+  if(length(species_pres) == 1){
+    results <- data.frame(iucn = rep(NA, 5), n_species = rep(NA, 5), raw = rep(NA, 5), null_mean = rep(NA, 5), null_sd = rep(NA, 5), null_se = rep(NA, 5), ses = rep(NA, 5), n_spec_prop = rep(NA, 5))
+    return(results)
+  }
+  
   # subset PCA data to only species present in taxonomic group
   pca_group <- pca_data[species_pres, ]
 
   # calculate average of metric of all species in group
-  group_metric_avg <- avg(dispRity(pca_group, metric = metric_get)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
+  group_metric_avg <- avg(dispRity(pca_group, metric = metric_get, centroid = centroid)$disparity[[1]][[1]], avg_type = avg_par, na.rm = TRUE)
   
   # add species richness and average metric to results table
   results[1, "n_species"] <- length(species_pres)
@@ -344,6 +365,7 @@ calc_group_ses <- function(group, pca_data, taxonomy, iucn, metric, tax_level, n
                 region_species = species_pres, 
                 iucn_data = iucn, 
                 metric = metric,
+                centroid = div_loss_type,
                 n_sims = n_sims,
                 avg_par = avg_par,
                 cluster = cl)

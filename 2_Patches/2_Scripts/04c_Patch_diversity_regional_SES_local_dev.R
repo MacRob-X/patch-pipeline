@@ -37,7 +37,7 @@ source(
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Passeriformes"
+clade <- "Neognaths"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
@@ -51,14 +51,17 @@ sex_interest <- "male_female"
 # select metric ("centr-dist", "nn-k", "nn-count", "sum.variances", "sum.ranges")
 metric <- "centr-dist"
 # select type of averaging to use ("mean" or "median")
-avg_par <- "median"
+avg_par <- "mean"
 # select whether to calculate local or global diversity loss (i.e., mean distance to local or global centroid)
 div_loss_type <- "local"
 # select number of null distributions to generate
-n_sims <- 100
+n_sims <- 2
 # select whether to exclude grid cells with species richness below a certain threshold (e.g. 5)
 # set as 0 if no threshold wanted
 sr_threshold <- 5
+# select whether the full results (e.g. SES, SR, raw diversity) or only SES results (for
+# plotting) are to be returned
+ses_only <- FALSE
 # select whther to use liberal, conservative, or nominate IUCN data
 # "liberal" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
 # are assigned the highest threat level of the multiple species
@@ -100,17 +103,17 @@ avg <- function(vals, avg_type, na.rm = TRUE){
 # Load data ----
 
 # set PCA filename
-pca_filename <- paste(clade, sex_match, "patches.231030.PCAcolspaces", "rds", sep = ".")
+pca_filename <- paste(clade, sex_match, "patches.250716.PCAcolspaces", "rds", sep = ".")
 # Load PCA (values only)
 pca_dat <- readRDS(
   here::here(
-    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
+    "2_Patches", "3_OutputData", clade, "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
     pca_filename
   )
 )[[space]]$x
 
 # load IUCN Red List data
-iucn_filename <- paste0("iucn_2024_", iucn_type, ".csv")
+iucn_filename <- paste0("neognath_iucn_2024_", iucn_type, ".csv")
 iucn <- read.csv(
   here::here(
     "4_SharedInputData", iucn_filename
@@ -195,55 +198,55 @@ names(sexed_pca_list) <- sexes
 
 # set up parallel cluster (if using)
 # no_cores <- parallel::detectCores() - 4
-no_cores <- 2
-cl <- parallel::makeCluster(no_cores)
-
-wrapper_fn <- function(sex){
-   
-   pca_sexed <- sexed_pca_list[[sex]]
-   
-   # apply function across each region (row) in sf object
-   sexed_tmp_results <- lapply(1:nrow(region_shapes), function(region_number) {
-     
-     region_sf <- region_shapes[region_number, ]
-     
-     calc_region_ses(
-       region_sf = region_sf,
-       pca_data = pca_sexed,
-       pam = pam,
-       null_raster = null_rast,
-       iucn = iucn,
-       metric = metric,
-       n_sims = n_sims,
-       parallel_run = FALSE,
-       append_sf = TRUE,
-       # cluster = cl,
-       regions = regions
-     )
-     
-     
-   })
-   
-   return(sexed_tmp_results)
-   
- }
- 
- 
- parallel::clusterExport(cl, c("sexes", "wrapper_fn", "sexed_pca_list", "region_shapes", "calc_region_ses", "regions", "metric", "null_rast", "iucn", "n_sims", "dispRity", "calc_iucn_ses"), envir = .GlobalEnv)
- 
- parallel::clusterEvalQ(cl, {
-   library(Rcpp)
-   library(sf)
-   library(dispRity)
-   # If other packages with Rcpp dependencies are used, load them here as well
- })
- 
- results <- parallel::parLapply(cl, sexes, function(sex) {
-   try(wrapper_fn(sex))
- })
- results <- parallel::parLapply(cl = cl, sexes, wrapper_fn)
- 
- parallel::stopCluster(cl)
+# no_cores <- 2
+# cl <- parallel::makeCluster(no_cores)
+# 
+# wrapper_fn <- function(sex){
+#    
+#    pca_sexed <- sexed_pca_list[[sex]]
+#    
+#    # apply function across each region (row) in sf object
+#    sexed_tmp_results <- lapply(1:nrow(region_shapes), function(region_number) {
+#      
+#      region_sf <- region_shapes[region_number, ]
+#      
+#      calc_region_ses(
+#        region_sf = region_sf,
+#        pca_data = pca_sexed,
+#        pam = pam,
+#        null_raster = null_rast,
+#        iucn = iucn,
+#        metric = metric,
+#        n_sims = n_sims,
+#        parallel_run = FALSE,
+#        append_sf = TRUE,
+#        # cluster = cl,
+#        regions = regions
+#      )
+#      
+#      
+#    })
+#    
+#    return(sexed_tmp_results)
+#    
+#  }
+#  
+#  
+#  parallel::clusterExport(cl, c("sexes", "wrapper_fn", "sexed_pca_list", "region_shapes", "calc_region_ses", "regions", "metric", "null_rast", "iucn", "n_sims", "dispRity", "calc_iucn_ses"), envir = .GlobalEnv)
+#  
+#  parallel::clusterEvalQ(cl, {
+#    library(Rcpp)
+#    library(sf)
+#    library(dispRity)
+#    # If other packages with Rcpp dependencies are used, load them here as well
+#  })
+#  
+#  results <- parallel::parLapply(cl, sexes, function(sex) {
+#    try(wrapper_fn(sex))
+#  })
+#  results <- parallel::parLapply(cl = cl, sexes, wrapper_fn)
+#  
+#  parallel::stopCluster(cl)
  
  # End attempted parallelisation --------------------------------------------------
 # ------------------------------------------------------------
@@ -252,7 +255,7 @@ wrapper_fn <- function(sex){
 
 # get number of regions to apply across (this method is much faster than nrow())
 n_regions <- length(attr(region_shapes, "row.names"))
- 
+
 # apply function across each sexed dataset
 results <- lapply(sexes, function(sex){
   
@@ -272,7 +275,7 @@ results <- lapply(sexes, function(sex){
       metric = metric,
       n_sims = n_sims,
       parallel_run = FALSE,
-      append_sf = TRUE,
+      append_sf = ses_only,
       # cluster = cl,
       regions = regions,
       centroid = div_loss_type
@@ -286,7 +289,7 @@ names(results) <- sexes
 
 
 # for each sex, process results into dfs to bind to sf data
-results_dfs <- lapply(sexes, function(sex) {
+results_dfs_full <- lapply(sexes, function(sex) {
   
   # get individual sexed result
   sexed_results <- results[[sex]]
@@ -294,36 +297,78 @@ results_dfs <- lapply(sexes, function(sex) {
   # bind results together into a single dataframe
   sexed_results <- as.data.frame(do.call(rbind, sexed_results))
   
-  # adjust column names to specify sex
-  colnames(sexed_results) <- paste(sex, colnames(sexed_results), sep = "_")
+  # add column for sex
+  sexed_results$sex <- rep(sex, nrow(sexed_results))
   
   # convert NaN values to NA (where there are e.g. no CR species to be lost)
   sexed_results <- data.frame(lapply(sexed_results, gsub, pattern = NaN, replacement = NA, fixed = TRUE))
   
 })
 
-
 # identify rows to be removed (regions which contain no species or only a single species in our dataset)
-rows_to_keep <- which(!(results_dfs[[1]][, 1] == "nospec_region" | results_dfs[[1]][, 1] == "singlespec_region"))
+rows_to_keep <- which(!(results_dfs_full[[1]][, 1] == "nospec_region" | results_dfs_full[[1]][, 1] == "singlespec_region"))
 
-# bind results to sf data
-region_results <- cbind(region_shapes, do.call(cbind, results_dfs))
+# rename results df elements (so the plotting works)
+names(results_dfs_full) <- sexes
 
+# combine into single df
+results_dfs_full <- do.call(rbind, results_dfs_full)
+
+# create ses-only results (to be appended to region shapefiles)
+results_dfs_ses <- lapply(sexes, function(sex){
+  
+  ses_results_sexed <- lapply(results[[sex]], function(element){
+    ses_only <- element[, "ses"]
+  })
+  
+  # bind results together into a single dataframe
+  ses_results_sexed <- as.data.frame(do.call(rbind, ses_results_sexed))
+  
+  colnames(ses_results_sexed) <- c("all", "CR", "EN", "VU", "NT")
+  
+  # adjust column names to specify sex
+  colnames(ses_results_sexed) <- paste(sex, colnames(ses_results_sexed), sep = "_")
+  
+  # convert NaN values to NA (where there are e.g. no CR species to be lost)
+  ses_results_sexed <- data.frame(lapply(ses_results_sexed, gsub, pattern = NaN, replacement = NA, fixed = TRUE))
+  
+})
+# identify rows to be removed (regions which contain no species or only a single species in our dataset)
+rows_to_keep <- which(!(results_dfs_ses[[1]][, 1] == "nospec_region" | results_dfs_ses[[1]][, 1] == "singlespec_region"))
+
+# rename results df elements (so the plotting works)
+names(results_dfs_ses) <- sexes
+
+
+# bind ses results to sf data
+region_results <- cbind(region_shapes, do.call(cbind, results_dfs_ses))
 # remove regions for which there are no species
 region_results <- region_results[rows_to_keep, ]
 
-# rename results df elements (so the plotting works)
-names(results_dfs) <- sexes
+
 
 # save intermediate results
+
+# as RDS for plot data
 results_filename <- paste0(paste(clade, space, "regionalSESplotdata", div_loss_type, metric, avg_par, regions, paste0(n_sims, "sims"), paste0(iucn_type, "iucn"), sex_match, pam_res, pam_type, pam_seas, sep = "_"), ".rds")
 saveRDS(
-  results_dfs, 
+  results_dfs_ses, 
   here::here(
-    "2_Patches", "3_OutputData", "6_Spatial_mapping", "2_Regional_diversity_SES", pam_res, space,
+    "2_Patches", "3_OutputData", clade, "6_Spatial_mapping", "2_Regional_diversity_SES", pam_res, space,
     results_filename
   )
 )
+
+# save as csv for full data
+results_filename <- paste0(paste(clade, space, "regionalSESfulldata", div_loss_type, metric, avg_par, regions, paste0(n_sims, "sims"), paste0(iucn_type, "iucn"), sex_match, pam_res, pam_type, pam_seas, sep = "_"), ".csv")
+write.csv(
+  results_dfs_full,
+  here::here(
+    "2_Patches", "3_OutputData", clade, "6_Spatial_mapping", "2_Regional_diversity_SES", pam_res, space,
+    results_filename
+  )
+)
+
 
 # plot results ----
 
@@ -331,7 +376,7 @@ saveRDS(
 results_filename <- paste0(paste(clade, space, "regionalSESplotdata", div_loss_type, metric, avg_par, regions, paste0(n_sims, "sims"), paste0(iucn_type, "iucn"), sex_match, pam_res, pam_type, pam_seas, sep = "_"), ".rds")
 results_dfs <- readRDS(
   here::here(
-    "2_Patches", "3_OutputData", "6_Spatial_mapping", "2_Regional_diversity_SES", pam_res, space,
+    "2_Patches", "3_OutputData", clade, "6_Spatial_mapping", "2_Regional_diversity_SES", pam_res, space,
     results_filename
   )
 )
@@ -347,6 +392,26 @@ region_shapes <- load_regions(regions)
 
 # bind results to sf data
 region_results <- cbind(region_shapes, do.call(cbind, results_dfs))
+
+# save region results as shapefiles
+# i.e. ecoregion data with diversity values attached
+results_sh_filename <- paste0(paste(clade, space, "regionalSESplotdata", div_loss_type, metric, avg_par, regions, paste0(n_sims, "sims"), paste0(iucn_type, "iucn"), sex_match, pam_res, pam_type, pam_seas, sep = "_"), ".shp")
+output_folder <- here::here("2_Patches", "3_OutputData", clade, "6_Spatial_mapping", "2_Regional_diversity_SES", pam_res, space, "shapefiles")
+if(!dir.exists(output_folder)){
+  dir.create(output_folder, recursive = TRUE)
+}
+sf::st_write(region_shapes, paste(output_folder, results_sh_filename, sep = "/"))
+
+# save as dfs with biome info but no geometry
+region_results_dfs_nogeom <- sf::st_drop_geometry(region_results)
+results_nogeom_filename <-  paste0(paste(clade, space, "regionalSESplotdata", div_loss_type, metric, avg_par, regions, paste0(n_sims, "sims"), paste0(iucn_type, "iucn"), sex_match, pam_res, pam_type, pam_seas, sep = "_"), ".csv")
+write.csv(
+  region_results_dfs_nogeom,
+  here::here(
+    "2_Patches", "3_OutputData", clade, "6_Spatial_mapping", "2_Regional_diversity_SES", pam_res, space,
+    results_nogeom_filename
+  )
+)
 
 # remove regions for which there are no species
 region_results <- region_results[rows_to_keep, ]
@@ -448,7 +513,7 @@ png_filename <- paste0(paste(clade, space, "regionalSES", div_loss_type, metric,
 # initialise png saving
 png(
   here::here(
-    "2_Patches", "4_OutputPlots", "3_Spatial_mapping", "2_Regional_diversity_SES", pam_res, space,
+    "2_Patches", "4_OutputPlots", clade, "3_Spatial_mapping", "2_Regional_diversity_SES", pam_res, space,
     png_filename
   ), 
   width = 1450, height = 1550, res = 72, pointsize = 20
