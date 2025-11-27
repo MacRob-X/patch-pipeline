@@ -108,12 +108,16 @@ assert_umap_pca <- checkmate::makeAssertionFunction(check_umap_pca)
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Passeriformes"
+clade <- "Neognaths"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 space <- "lab"
+# select whether to use matched sex data (""all" or "matchedsex")
+# "matchedsex" will use diversity metrics calculated on a subset of data containing only species
+# for which we have both a male and female specimen (and excluding specimens of unknown sex)
+sex_match <- "matchedsex"
 
 # PCA data (output from 02_Patch_Analyse_features)
-pca_filename <- paste(clade, "patches.231030.PCAcolspaces", "rds", sep = ".")
+pca_filename <- paste(clade, sex_match, "patches.250716.PCAcolspaces", "rds", sep = ".")
 pca_all <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
@@ -123,7 +127,7 @@ pca_all <- readRDS(
   magrittr::extract2(space)
 
 # UMAP data (output from 02b_Patch_Umap_iterations.R)
-umap_filename <- paste(clade, "patches", space, "pca", "canonUMAP", "rds", sep = ".")
+umap_filename <- paste(clade, sex_match, "patches.nn.25.mindist.0.1",  space, "UMAP", "rds", sep = ".")
 umap_all <- readr::read_rds(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "2_UMAP",
@@ -371,3 +375,32 @@ htmlwidgets::saveWidget(
     plot_filename
   )
 )
+
+# Plot individual PC axis distributions ----
+library(ggridges)
+# first get long version of data
+df_pca_long <- df_with_pca %>% 
+  tidyr::pivot_longer(cols = starts_with("PC"), names_to = "PC", values_to = "value") %>% 
+  mutate(PC = as.numeric(gsub("PC", "", PC)))
+
+# Plot density plots as ridgeline plot
+df_pca_long %>% 
+  filter(PC <= 15) %>% 
+  ggplot(aes(x = value, y = as.factor(PC), fill = as.factor(PC))) +
+  geom_density_ridges()
+
+# PC1 looks pretty non-normal - check the QQ plot
+df_with_pca %>% 
+  select(PC1) %>% 
+  ggplot(aes(sample = PC1)) + 
+  stat_qq() + 
+  stat_qq_line()
+
+# Same for PCs 1-10
+df_pca_long %>% 
+  filter(PC <= 10) %>% 
+  ggplot(aes(sample = value, colour = factor(PC))) + 
+  stat_qq() +
+  stat_qq_line() + 
+  facet_wrap(~ factor(PC))
+  

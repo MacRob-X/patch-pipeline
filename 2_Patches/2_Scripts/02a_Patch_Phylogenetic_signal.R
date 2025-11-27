@@ -7,10 +7,12 @@ rm(list=ls())
 library(motmot)
 library(ape)
 library(geomorph)
+library(ggplot2)
+library(dplyr)
 
-## EDITABLE CODE ## ----
+## EDITAggplot2## EDITABLE CODE ## ----
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Neoaves"
+clade <- "Neognaths"
 # select whether to use matched sex data (""all" or "matchedsex")
 # "matchedsex" will use diversity metrics calculated on a subset of data containing only species
 # for which we have both a male and female specimen (and excluding specimens of unknown sex)
@@ -21,7 +23,7 @@ sex_interest <- "male_female"
 # jndxyz, jndxyzlum, jndxyzlumr)
 space <- "lab"
 # select sex of interest ("M" or "F")
-sex <- "M"
+sex <- "F"
 
 # Functions ----
 
@@ -54,8 +56,8 @@ get_spp_sex <- function(div_data){
 phy <- read.tree("./4_SharedInputData/First100_AllBirdsHackett1.tre")
 
 # load PCA patch data 
-pca_filename <- paste(clade, sex_match,  "patches.231030.PCAcolspaces.rds", sep = ".")
-pcaAll <- readRDS(paste0("./2_Patches/3_OutputData/2_PCA_ColourPattern_spaces/1_Raw_PCA/", pca_filename))[[space]]
+pca_filename <- paste(clade, sex_match,  "patches.250716.PCAcolspaces.rds", sep = ".")
+pcaAll <- readRDS(paste0("./2_Patches/3_OutputData/", clade, "/2_PCA_ColourPattern_spaces/1_Raw_PCA/", pca_filename))[[space]]
 
 # add species name and sex as columns in pca data
 pcaDat <- as.data.frame(pcaAll$x)
@@ -139,40 +141,67 @@ stopCluster(cl)
 
 # save
 lambda_filepath <- here::here(
-  "2_Patches", "3_OutputData", "3_Phylogenetic_signal", space
+  "2_Patches", "3_OutputData", clade, "3_Phylogenetic_signal", space
 )
 if(!dir.exists(lambda_filepath)){
   dir.create(lambda_filepath, recursive = TRUE)
 }
-lambda_filename <- paste("pagelsLambda", sex, "hackettTrees10.rds", sep = ".")
+lambda_filename <- paste("pagelsLambda", sex, "hackettTrees100.rds", sep = ".")
 saveRDS(lambda.ml, file = paste(lambda_filepath, lambda_filename, sep = "/"))
 
 
-# Load pagel's lambda for each PC
-lambda.ml <- readRDS(paste(lambda_filepath, lambda_filename, sep = "/"))
+# Load pagel's lambda for each PC for each sex
+lambda.ml <- vector(mode = "list", length = 2)
+names(lambda.ml) <- c("M", "F")
+for (s in names(lambda.ml)){
+  lambda_filename <- paste("pagelsLambda", s, "hackettTrees100.rds", sep = ".")
+  lambda.ml[[s]] <- readRDS(paste(lambda_filepath, lambda_filename, sep = "/"))
+}
+lambda.ml.M <- readRDS(paste(lambda_filepath, lambda_filename, sep = "/"))
 
 # calculate mean lambda and 95% CIs for each PC (i.e. average over the tree distribution)
-lambda.ml.means <- vector("list", length = ncol(pcaDat))
-
-for(i in 1:ncol(pcaDat)){
+lambda.ml.means <- vector("list", length = 2)
+names(lambda.ml.means) <- c("M", "F")
+for(s in names(lambda.ml.means)){
   
-  # add mean distribution to list
-  lambda.ml.means[[i]]$means <- c(rep(NA, times = length(phy)))
-  for(j in 1:length(phy)){
-    lambda.ml.means[[i]]$means[j] <- lambda.ml[[i]][[j]]$Lambda[[1]]
+  lambda.ml.means.sexed <- vector("list", length = ncol(pcaDat))
+  
+  for(i in 1:ncol(pcaDat)){
+    
+    # add mean distribution to list
+    lambda.ml.means.sexed[[i]]$means <- c(rep(NA, times = length(phy)))
+    for(j in 1:length(phy)){
+      lambda.ml.means.sexed[[i]]$means[j] <- lambda.ml[[s]][[i]][[j]]$Lambda[[1]]
+    }
+    # add grand mean to list
+    lambda.ml.means.sexed[[i]]$grandMean <- mean(lambda.ml.means.sexed[[i]]$means)
+    # add sd to list
+    lambda.ml.means.sexed[[i]]$sd <- sd(lambda.ml.means.sexed[[i]]$means)
+    # add 95% CIs to list
+    lambda.ml.means.sexed[[i]]$CIs <- c(mean(lambda.ml.means.sexed[[i]]$means + 1.96 * (lambda.ml.means.sexed[[i]]$sd / sqrt(length(phy)))), 
+                                  mean(lambda.ml.means.sexed[[i]]$means - 1.96 * (lambda.ml.means.sexed[[i]]$sd / sqrt(length(phy)))))
+    
   }
-  # add grand mean to list
-  lambda.ml.means[[i]]$grandMean <- mean(lambda.ml.means[[i]]$means)
-  # add sd to list
-  lambda.ml.means[[i]]$sd <- sd(lambda.ml.means[[i]]$means)
-  # add 95% CIs to list
-  lambda.ml.means[[i]]$CIs <- c(mean(lambda.ml.means[[i]]$means + 1.96 * (lambda.ml.means[[i]]$sd / sqrt(length(phy)))), 
-                                mean(lambda.ml.means[[i]]$means - 1.96 * (lambda.ml.means[[i]]$sd / sqrt(length(phy)))))
-  
+  lambda.ml.means[[s]] <- lambda.ml.means.sexed
 }
 
-
-
+# convert to dataframe for plotting
+lambda.ml.means.df <- data.frame(
+  PC = rep(1:ncol(pcaDat), times = 2), 
+  sex = c(rep("M", times = ncol(pcaDat)), rep("F", times = ncol(pcaDat))),
+  mean = rep(NA, times = ncol(pcaDat) * 2),
+  lowerCI = rep(NA, times = ncol(pcaDat) * 2),
+  upperCI = rep(NA, times = ncol(pcaDat) * 2)
+  )
+for(s in c("M", "F")){
+  
+  for(i in 1:ncol(pcaDat)){
+    lambda.ml.means.df[lambda.ml.means.df$sex == s, ]$mean[i] <- lambda.ml.means[[s]][[i]]$grandMean
+    lambda.ml.means.df[lambda.ml.means.df$sex == s, ]$lowerCI[i] <- lambda.ml.means[[s]][[i]]$CIs[[1]]
+    lambda.ml.means.df[lambda.ml.means.df$sex == s, ]$upperCI[i] <- lambda.ml.means[[s]][[i]]$CIs[[2]]
+  }
+  
+}
 
 
 # plot lambda plus CIs for each PC
@@ -182,6 +211,8 @@ for(i in 1:ncol(pcaDat)){
   lambda.ml.means.df$lowerCI[i] <- lambda.ml.means[[i]]$CIs[[1]]
   lambda.ml.means.df$upperCI[i] <- lambda.ml.means[[i]]$CIs[[2]]
 }
+plot_filename <- paste("pagelsLambda", sex, "hackettTrees10.png", sep = ".")
+png(filename = here::here("2_Patches", "4_OutputPlots", "4_Phylogenetic_signal", space,plot_filename), width = 1000, height = 800)
 plot(mean ~ PC, data = lambda.ml.means.df,
      xlab = "PC", ylab = "Mean Lambda across 10 trees",
      ylim = c(0, 1))
@@ -191,6 +222,26 @@ arrows(x0 = lambda.ml.means.df$PC,
        y1 = lambda.ml.means.df$upperCI,
        angle = 90, code = 3, length = 0.1)
 lines(x = lambda.ml.means.df$PC, y = lambda.ml.means.df$mean)
+dev.off()
+
+
+# ggplot version, with a line for each sex
+p <- ggplot(filter(lambda.ml.means.df, sex == "M"), aes(x = PC, y = mean, colour = sex)) + 
+  geom_line() + 
+  geom_point() + 
+  geom_errorbar(aes(ymin = lowerCI, ymax = upperCI)) + 
+  geom_line(data = filter(lambda.ml.means.df, sex == "F"), aes(x = PC, y = mean, colour = sex)) + 
+  geom_point(data = filter(lambda.ml.means.df, sex == "F"), aes(x = PC, y = mean, colour = sex)) + 
+  geom_errorbar(data = filter(lambda.ml.means.df, sex == "F"), aes(ymin = lowerCI, ymax = upperCI)) + 
+  # facet_wrap(~sex, ncol = 2) +
+  labs(x = "Principal Component", y = "Mean \u03bb across 100 trees") + 
+  theme_bw() + 
+  scale_x_continuous(breaks = 1:nrow(lambda.ml.means.df)) + 
+  ylim(0, max(lambda.ml.means.df$mean)) + 
+  ggstats::geom_stripped_cols(colour = NA)
+
+plot_filename <- "pagelsLambda_hackettTrees100.png"
+ggsave(filename = plot_filename, plot = p, width = 1000, height = 800, units = "px", path = here::here("2_Patches", "4_OutputPlots", clade, "4_Phylogenetic_signal", space), dpi = 150)
 
 screeplot(pcaAll)
 

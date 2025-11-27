@@ -36,7 +36,7 @@ source(
 
 ## EDITABLE CODE ##
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Passeriformes"
+clade <- "Neognaths"
 # select type of colour pattern space to use ("jndxyzlum", "usmldbl", "usmldblr")
 # N.B. will need to change the date in the pca_all filename if using usmldbl or usmldblr
 # (from 240603 to 240806)
@@ -50,11 +50,11 @@ sex_interest <- "male_female"
 # select metric ("centr-dist", "nn-k", "nn-count", "nn-all", "sum.variances", "sum.ranges")
 metric <- "centr-dist"
 # select type of averaging to use ("mean" or "median")
-avg_par <- "median"
+avg_par <- "mean"
 # select whether to calculate local or global diversity loss (i.e., mean distance to local or global centroid)
-div_loss_type <- "local"
+div_loss_type <- "global"
 # select number of null distributions to generate
-n_sims <- 100
+n_sims <- 1000
 
 # select whther to use liberal, conservative, or nominate IUCN data
 # "liberal" = Jetz (BirdTree) species that correspond to multiple IUCN (BirdLife) species
@@ -87,17 +87,17 @@ log_choice <- FALSE
 # Load data ----
 
 # set PCA filename
-pca_filename <- paste(clade, sex_match, "patches.231030.PCAcolspaces", "rds", sep = ".")
+pca_filename <- paste(clade, sex_match, "patches.250716.PCAcolspaces", "rds", sep = ".")
 # Load PCA (values only)
 pca_mat <- readRDS(
   here::here(
-    "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
+    "2_Patches", "3_OutputData", clade, "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
     pca_filename
   )
 )[[space]]$x
 
 # load IUCN Red List data
-iucn_filename <- paste0("iucn_2024_", iucn_type, ".csv")
+iucn_filename <- paste0("neognath_iucn_2024_", iucn_type, ".csv")
 iucn <- read.csv(
   here::here(
     "4_SharedInputData", iucn_filename
@@ -175,7 +175,8 @@ results <- lapply(sexes, function(sex){
          tax_level = tax_level, 
          n_sims = n_sims,
          #cluster = cl,
-         parallel_run = FALSE
+         parallel_run = FALSE,
+         div_loss_type = div_loss_type
          )
   
 })
@@ -207,6 +208,16 @@ results_dfs <- lapply(sexes, function(sex) {
 
 # bind rows together
 results_all <- do.call(rbind, results_dfs)
+
+# save results as csv
+csv_filename <- paste0(paste(clade, space, tax_level, "SES", div_loss_type, metric, avg_par, paste0(n_sims, "sims"), paste0(iucn_type, "iucn"), sex_match, sep = "_"), ".csv")
+write.csv(
+  results_all,
+  here::here(
+    "2_Patches", "3_OutputData", clade, "4_Diversity_measures", "2_Taxo_group_diversity", "SES", space,
+    csv_filename
+  )
+)
 
 
 # Plotting ----
@@ -261,15 +272,15 @@ p <- results_all %>%
 
 
 # save plot
-png_filename <- paste0(paste(clade, space, tax_level, "SES", metric, avg_par, paste0(n_sims, "sims"), paste0(iucn_type, "iucn"), sex_match, sep = "_"), ".png")
+png_filename <- paste0(paste(clade, space, tax_level, "SES", div_loss_type, metric, avg_par, paste0(n_sims, "sims"), paste0(iucn_type, "iucn"), sex_match, sep = "_"), ".png")
 
 # initialise png saving
 png(
   here::here(
-    "2_Patches", "4_OutputPlots", "2_Diversity_measures", "2_Diversity_phylogeny", "within_group_diversity", paste0(tax_level, "_level"), "SES",
+    "2_Patches", "4_OutputPlots", clade, "2_Diversity_measures", "2_Diversity_phylogeny", "within_group_diversity", paste0(tax_level, "_level"), "SES",
     png_filename
   ), 
-  width = 1450, height = 1550, res = 100, pointsize = 40
+  width = 1450, height = 3550, res = 100, pointsize = 40
 )
 print(p)
 dev.off()
