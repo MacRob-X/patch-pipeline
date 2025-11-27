@@ -21,7 +21,13 @@ source(
 
 # EDITABLE CODE # ----
 # Select subset of species ("Neoaves" or "Passeriformes")
-clade <- "Passeriformes"
+clade <- "Neoaves"
+# select whether to use matched sex data (""all" or "matchedsex")
+# "matchedsex" will use diversity metrics calculated on a subset of data containing only species
+# for which we have both a male and female specimen (and excluding specimens of unknown sex)
+sex_match <- "matchedsex"
+# select sex of interest ("all", "male_female", "male_only", "female_only", "unknown_only")
+sex_interest <- "male_female"
 # Choose space to work with (usmldbl, usmldblr, xyz, xyzlum, xyzlumr, lab, cie, sRGB, hex, 
 # jndxyz, jndxyzlum, jndxyzlumr)
 space <- "lab"
@@ -32,7 +38,7 @@ space <- "lab"
 pre_pca_space <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "1_RawColourSpaces", 
-    paste0(clade, ".patches.231030.prePCAcolspaces.rds")
+    paste(clade, sex_match, "patches.231030.prePCAcolspaces.rds", sep = ".")
   )
 ) %>% 
   magrittr::extract2(space)
@@ -41,7 +47,7 @@ pre_pca_space <- readRDS(
 pca_space <- readRDS(
   here::here(
     "2_Patches", "3_OutputData", "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
-    paste0(clade, ".patches.231030.PCAcolspaces.rds")
+    paste(clade, sex_match,  "patches.231030.PCAcolspaces.rds", sep = ".")
   )
 ) %>% 
   magrittr::extract2(space)
@@ -96,7 +102,7 @@ res <- rbind(res, data.frame(denoised = "FALSE",
 # Note that for large sample size, simulated eigenvalues always tend to 1 and
 # parallel analysis converges with the classic Kaiser-Guttman rule of retaining 
 # the components with eigenvalues > 1 (Guttman, 1954; see Revelle, 2019)
-paranal <- psych::fa.parallel(pre_pca_space, fa = "pc")
+paranal <- psych::fa.parallel(pre_pca_space, fa = "pc", n.iter = 200)
 paranal_cutoff <- paranal$ncomp
 print(
   paste0(
