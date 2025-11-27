@@ -26,7 +26,7 @@ source(
 # select clade to limit analysis to
 clade <- "Neognaths"
 # select sex ("M", "F", "All")
-sex <- "All"
+sex <- "F"
 # select number of null distributions to generate
 n_sims <- 1000
 # select whther to use liberal, conservative, or nominate IUCN data
@@ -41,7 +41,7 @@ iucn_type <- "nominate"
 
 # Load data ----
 
-# load iratebirds data (PCA of whichever colourspace - generated in 02_Patch_Analyse_features.R)
+# load iratebirds data
 # Filter to clade
 
 if(clade == "Neognaths"){
@@ -87,20 +87,167 @@ if(clade == "Neognaths"){
 
 
 # load IUCN Red List data
-iucn_filename <- paste0("IUCN_RedList_data_130324", ".rds")
-iucn <- readRDS(
+iucn_filename <- paste0("neognath_iucn_2024_", iucn_type, ".csv")
+iucn <- read.csv(
   here::here(
     "4_SharedInputData", iucn_filename
   )
+ ) %>% 
+  select(
+    species_birdtree, iucn_cat, order_name
+  ) %>% 
+  mutate(
+    order_name = stringr::str_to_title(order_name)
+  )
+# filter to clade
+if(clade == "Neognaths"){
+  iucn <- iucn %>% 
+    filter(
+      order_name != "Struthioniformes", 
+      order_name != "Rheiformes", 
+      order_name != "Casuariiformes", 
+      order_name != "Apterygiformes", 
+      order_name != "Tinamiformes", 
+      #   order_name != "Galliformes", 
+      #   order_name != "Anseriformes"
+    )
+} else if(clade == "Neoaves"){
+  iucn <- iucn %>% 
+    filter(
+      order_name != "Struthioniformes", 
+      order_name != "Rheiformes", 
+      order_name != "Casuariiformes", 
+      order_name != "Apterygiformes", 
+      order_name != "Tinamiformes", 
+      order_name != "Galliformes", 
+      order_name != "Anseriformes"
+    )
+} else if(clade == "Passeriformes"){
+  iucn <- iucn %>% 
+    filter(
+      order_name == "Passeriformes", 
+    )
+}
+
+# load PCA data (to get species list)
+pca_filename <- paste(clade, "matchedsex", "patches.250716.PCAcolspaces", "rds", sep = ".")
+pca_data <- readRDS(
+  here::here(
+    "2_Patches", "3_OutputData", clade, "2_PCA_ColourPattern_spaces", "1_Raw_PCA",
+    pca_filename
+  )
+)[["lab"]]$x
+
+# Taxonomy matching ----
+
+# load the McTavish-Jetz crosswalk (which contains Santangeli names - keep only these and Jetz)
+mctav_crosswalk <- read.csv(
+  here::here(
+    "4_SharedInputData", "mctavish_jetz_crosswalk.csv"
+  )
 ) %>% 
-  select(scientific_name, category) %>% 
-  mutate(scientific_name = gsub(" ", "_", scientific_name)) %>% 
-  rename(species_birdlife = scientific_name, iucn_cat = category)
+  select(
+    mctav_ebird2021, final_jetz, notes
+  )
+
+# filter IUCN data to only species for which we have colour data (for better comparison with SES colour
+# diversity loss)
+pca_spp <- unique(sapply(strsplit(rownames(pca_data), split = "-"), "[", 1))
+iucn <- iucn %>% 
+  filter(
+    species_birdtree %in% pca_spp
+  )
+
+# match the IUCN categories to the mctavish crosswalk and filter out extinct species
+mctav_iucn <- iucn %>% 
+  left_join(mctav_crosswalk, by = join_by(species_birdtree == final_jetz)) %>% 
+  filter(
+    notes != "extinct"
+  ) %>% 
+  filter(
+    iucn_cat != "EX",
+    iucn_cat != "EW"
+  )
+  
+# there are some duplicate Jetz rows - let's add a "duplicate" column and a final IUCN column to sort these out
+# for all non-duplicates, set the final iucn category as the original one
+mctav_iucn <- mctav_iucn %>% 
+  mutate(
+    dupe = species_birdtree %in% species_birdtree[duplicated(species_birdtree)],
+    iucn_final = ifelse(dupe == FALSE, iucn_cat, NA)
+  )
+
+# for duplicates, if the IUCN category is the same among all the duplicates then we can just set the
+# final IUCN category as the original
+dupes_same_iucn <- mctav_iucn %>% 
+  filter(dupe == TRUE) %>% 
+  distinct(species_birdtree, iucn_cat, .keep_all = T) %>% 
+  pull(species_birdtree)
+mctav_iucn <- mctav_iucn %>% 
+  mutate(
+    iucn_final = ifelse(species_birdtree %in% dupes_same_iucn, iucn_cat, iucn_final)
+  )
+# check if any still don't have an IUCN level
+mctav_iucn %>% 
+  filter(
+    is.na(iucn_final)
+  )
+# all good
+
+# get ebird2021 name with underscore
+irate_master <- irate_master %>% 
+  mutate(
+    sciName_ebird2021 = gsub(" ", "_", sciName_ebird2021)
+  )
 
 
-# join iratebirds data to IUCN data
-# NOTE that these are not properly matched, so we're going to lose lots of species and possibly
-# bias the results - this is messing around only
+# create separate male and female Santangeli data
+irate_m <- irate_master %>% 
+  filter(sex == "male" | sex == "average") %>% 
+  mutate(sex = "M")
+irate_f <- irate_master %>% 
+  filter(sex == "female" | sex == "average") %>% 
+  mutate(sex = "F")
+# put back together as single df and filter to only species for which we have male and female data
+irate_matchedsex <- irate_m %>% 
+  bind_rows(irate_f) %>% 
+  group_by(sciName_ebird2021) %>% 
+  filter(n() > 1)
+
+# join to Santangeli data and select relevant columns
+# we only care about species for which we have both IUCN data and attractiveness data, so do inner join
+sant_data <- mctav_iucn %>% 
+  inner_join(irate_matchedsex, by = join_by(mctav_ebird2021 == sciName_ebird2021)) %>% 
+  select(species_birdtree, iucn_cat, mctav_ebird2021, attractiveness_mean, sex, dupe)
+
+# for monomorphic species with duplicated rows, take mean of attractiveness scores within sex
+dupes <- sant_data %>% 
+  group_by(species_birdtree) %>% 
+  filter(n() > 2)
+dupes_scores <- dupes %>% 
+  group_by(species_birdtree, sex) %>% 
+  summarise(mean_dupe_attract_final = mean(attractiveness_mean, na.rm = T))
+
+# join non-duplicated data to duplicated data
+non_dupe_dat <- sant_data %>% 
+  filter(
+    !(species_birdtree %in% dupes$species_birdtree)
+  )
+dupe_dat <- dupes %>% 
+  left_join(dupes_scores, by = c("species_birdtree", "sex")) %>% 
+  distinct(species_birdtree, sex, .keep_all = T)
+sant_data <- non_dupe_dat %>% 
+  bind_rows(dupe_dat)
+
+
+# create final attraction score column
+sant_data <- sant_data %>% 
+  mutate(final_attract = ifelse(species_birdtree %in% dupes_scores$species_birdtree & sex == "average", mean_dupe_attract_final, attractiveness_mean))
+
+# select only relevant columns
+sant_data <- sant_data %>% 
+  select(species_birdtree, mctav_ebird2021, iucn_cat, sex, final_attract)
+
 
 
 ####################    
@@ -113,18 +260,11 @@ iucn <- readRDS(
 
 
 # Matrix containing attractiveness data (remove duplicates):
-trait <- irate_master %>% 
+trait <- sant_data %>% 
   as.data.frame() %>% 
   rename(
-    attract = attractiveness_mean,
-    iucn_cat = redlistCategory,
-    species = sciname_ebird2019
-  ) %>% 
-  mutate(
-    species = gsub(" ", "_", species),
-    attract = as.numeric(gsub(",", ".", attract)),
-    sex = ifelse(sex == "male", "M", sex),
-    sex = ifelse(sex == "female", "F", sex)
+    species = species_birdtree,
+    attract = final_attract
   ) %>% 
   select(species, sex, attract, iucn_cat) #%>% 
   # Filter out subspecies
@@ -133,44 +273,10 @@ trait <- irate_master %>%
 
 # rename IUCN categories and filter out DD, EW, EX species and species for which we don't have a category
 trait <- trait %>% 
-  mutate(
-    iucn_cat = ifelse(iucn_cat == "Critically Endangered", "CR", iucn_cat),
-    iucn_cat = ifelse(iucn_cat == "Endangered", "EN", iucn_cat),
-    iucn_cat = ifelse(iucn_cat == "Vulnerable", "VU", iucn_cat),
-    iucn_cat = ifelse(iucn_cat == "Near Threatened", "NT", iucn_cat),
-    iucn_cat = ifelse(iucn_cat == "Least Concern", "LC", iucn_cat),
-  ) %>% 
   filter(
     iucn_cat %in% c("CR", "EN", "VU", "NT", "LC")
   )
 
-
-# add extra (duplicate) rows for undefined sex (largely monomorphic) species
-mon_trait <- trait %>% 
-  filter(
-    sex == "average"
-  )
-mon_trait_m <- mon_trait %>% 
-  mutate(
-    sex = "M"
-  )
-mon_trait_f <- mon_trait %>% 
-  mutate(
-    sex = "F"
-  )
-mon_trait <- mon_trait_m %>% 
-  bind_rows(mon_trait_f)
-trait <- trait %>% 
-  filter(
-    sex != "average"
-  ) 
-trait <- trait %>% 
-  bind_rows(mon_trait)
-rm(mon_trait, mon_trait_f, mon_trait_m)
-# keep only spp for which we have both male and female data
-trait <- trait %>% 
-  group_by(species) %>% 
-  filter(n() > 1)
 
 # filter iucn data to only these species
 # Species matched to IUCN categories:
@@ -428,15 +534,15 @@ res$IUCN <- factor(res$IUCN, levels = c("All Species Retained", "CR Lost", "EN L
 # same for sex (to make plots appear in All-M-F order)
 res$sex <- factor(res$sex, levels = c("All", "M", "F"))
 
-# convert sex label list and labelling function to change facet labels
-sex_vals <- list(
+# convert sex label vector and labelling function to change facet labels
+sex_vals <- c(
   'All' = "All specimens",
   'M' = "Males",
   'F' = "Females"
 )
-sex_labeller <- function(variable, value){
-  return(sex_vals[value])
-}
+# sex_labeller <- function(variable, value){
+#   return(sex_vals[value])
+# }
 
 # plot (subset by sex if required)
 # note that there's no point in adding error bars because the error's so small you can't see it
@@ -453,7 +559,7 @@ p <- res %>%
   geom_hline(yintercept = 0, linetype = "dashed") + 
   geom_hline(yintercept = 2, linetype = "dashed") +
   theme_light() + 
-  facet_wrap(~ sex, ncol = 3, labeller = sex_labeller) + 
+  facet_wrap(~ sex, ncol = 3, labeller = as_labeller(sex_vals)) + 
   #  ggtitle(space) + 
   theme_bw() + 
   theme(text=element_text(size=12,  family="Century Gothic"))
