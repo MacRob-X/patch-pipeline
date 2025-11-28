@@ -314,6 +314,17 @@ if(col_scale_type == "binned"){
 region_shapes <- cbind(region_shapes, results_df)
 
 
+# save ecoregion data with diversity values attached
+# first as shapes file
+results_shapes_filename <- paste(clade, "patches", sex_match, regions, avg_par, div_loss_type, metric, "sr_thresh", sr_threshold, pam_res, "Behrman", pam_type, pam_seas, "shp", sep = ".")
+output_folder <- here::here("2_Patches", "3_OutputData", clade, "6_Spatial_mapping", "4_Regional_diversity", pam_res)
+if(!dir.exists(output_folder)){
+  dir.create(output_folder, recursive = TRUE)
+}
+sf::st_write(region_shapes, paste(output_folder, results_shapes_filename, sep = "/"))
+
+
+
 # Plot ----
 
 # clear irrelevant objects
@@ -471,16 +482,6 @@ gridExtra::grid.arrange(grobs = plots, ncol = n_col)
 
 dev.off()
 
-
-
-# save ecoregion data with diversity values attached
-# first as shapes file
-results_shapes_filename <- paste(clade, "patches", sex_match, regions, avg_par, div_loss_type, metric, "sr_thresh", sr_threshold, pam_res, "Behrman", pam_type, pam_seas, "shp", sep = ".")
-output_folder <- here::here("2_Patches", "3_OutputData", clade, "6_Spatial_mapping", "4_Regional_diversity", pam_res)
-if(!dir.exists(output_folder)){
-  dir.create(output_folder, recursive = TRUE)
-}
-sf::st_write(region_shapes, paste(output_folder, results_shapes_filename, sep = "/"))
 
 
 # inspect most diverse ecoregions
