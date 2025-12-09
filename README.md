@@ -4,6 +4,8 @@
 
 ### 2_Patches/2_Scripts/
 
+These scripts should be run in the order in which they are numbered (excluding any deprecated or optional scripts).
+
 #### 00_Patch_number_specimens.R
 Counts the number of species for which we have matched male/female colour data, and calculates percentage coverage of species/genera
 
