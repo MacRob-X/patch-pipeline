@@ -601,6 +601,46 @@ plot_div_raster <- function(div_rast,
     }
     
     
+  } else if(scale_type == "continuous"){
+    div_breaks <- NULL
+    sr_breaks <- NULL
+    
+    # set colour palette for diversity metric
+    if(pal_choice == "viridis"){
+      divpal <- viridisLite::viridis(100)
+    } else if(pal_choice == "turbo"){
+      divpal <- viridisLite::turbo(100)
+    } else if(palette_choice == "inferno"){
+      divpal <- viridisLite::inferno(100)
+    } else if(pal_choice == "custom"){
+      # create own colour palette (based on Cooney et al (2022) Fig. 2)
+      cols <- c("#3e9eb5ff", "#eacc2cff", "#f82202ff")
+      divpal <- colorRampPalette(cols)(100)
+    }
+    
+    # reverse colour palette if using nn-count (as low numbers indicate more unusual colours for this metric)
+    if(metric == "nn-count"){
+      divpal <- rev(divpal)
+    }
+    
+    # set colour palette for species richness, if plotting
+    if(plot_sr == TRUE){
+      
+      
+      if(palette_choice == "viridis"){
+        srpal <- viridisLite::viridis(100)
+      } else if(palette_choice == "turbo"){
+        srpal <- viridisLite::turbo(100)
+      } else if(palette_choice == "inferno"){
+        srpal <- viridisLite::inferno(100)
+      } else if(palette_choice == "custom"){
+        # create own colour palette (based on Cooney et al (2022) Fig. 2)
+        cols <- c("#3e9eb5ff", "#eacc2cff", "#f82202ff")
+        srpal <- colorRampPalette(cols)(100)
+      }
+    }
+    
+    
   }
   
   # Set up basic legend title
